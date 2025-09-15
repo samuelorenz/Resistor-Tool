@@ -127,6 +127,12 @@ class ElectronicTool:
         bands_frame = ttk.Frame(input_frame)
         bands_frame.pack(fill=tk.X, padx=5, pady=5)
 
+        # Selettore numero bande (4 o 5)
+        ttk.Label(bands_frame, text="Numero bande:").grid(row=0, column=4, padx=5, pady=5)
+        self.num_bands = tk.IntVar(value=4)
+        ttk.Radiobutton(bands_frame, text="4", variable=self.num_bands, value=4, command=self.update_band_visibility).grid(row=0, column=5)
+        ttk.Radiobutton(bands_frame, text="5", variable=self.num_bands, value=5, command=self.update_band_visibility).grid(row=0, column=6)
+
         ttk.Label(bands_frame, text="Banda 1:").grid(row=0, column=0, padx=5, pady=5)
         self.band1_var = tk.StringVar()
         self.band1_combo = ttk.Combobox(bands_frame, textvariable=self.band1_var,
@@ -158,6 +164,13 @@ class ElectronicTool:
         # Pulsante calcola
         calc_btn = ttk.Button(input_frame, text="Calcola Valore", command=self.calculate_color_code)
         calc_btn.pack(pady=10)
+
+        # Disegno resistenza con bande
+        draw_frame = ttk.Frame(self.color_frame)
+        draw_frame.pack(fill=tk.X, padx=10, pady=5)
+        self.res_canvas = tk.Canvas(draw_frame, width=440, height=80, bg='#FFFFFF', highlightthickness=1, highlightbackground='#CCCCCC')
+        self.res_canvas.pack(side=tk.LEFT, padx=5)
+        self.update_resistor_drawing()
 
         # Frame per risultato
         result_frame = ttk.LabelFrame(self.color_frame, text="Risultato")
@@ -204,6 +217,59 @@ class ElectronicTool:
 
         except Exception as e:
             messagebox.showerror("Errore", f"Errore nel calcolo: {str(e)}")
+        finally:        
+            self.update_resistor_drawing()
+            try:
+                self.update_resistor_drawing()
+            except Exception:
+                pass
+
+    
+
+    def update_band_visibility(self):
+        # Aggiorna il disegno quando cambia il numero di bande
+        self.update_resistor_drawing()
+
+    def update_resistor_drawing(self):
+        # Disegna una resistenza stilizzata con bande colorate
+        try:
+            self.res_canvas.delete('all')
+        except Exception:
+            return
+
+        w = 440; h = 80
+        # Corpo
+        self.res_canvas.create_rectangle(40, 20, 400, 60, fill='#F0F0F0', outline='#333333')
+        # Terminali
+        self.res_canvas.create_line(0, 40, 40, 40, width=3, fill='#333333')
+        self.res_canvas.create_line(400, 40, w, 40, width=3, fill='#333333')
+
+        # Determina colori dalle scelte
+        band_colors = []
+        try:
+            band_colors.append(self.color_codes[self.band1_var.get()][1])
+            band_colors.append(self.color_codes[self.band2_var.get()][1])
+            band_colors.append(self.color_codes[self.multiplier_var.get()][1])
+            band_colors.append(self.tolerance_colors[self.tolerance_var.get()][1])
+        except Exception:
+            band_colors = ['#000000'] * 4
+
+        n = self.num_bands.get()
+        # Se 5 bande, inserisci una banda centrale addizionale (usiamo banda2 come placeholder)
+        if n == 5:
+            band_positions = [80, 140, 200, 260, 320]
+            # ricostruisci colori se esiste banda3
+            try:
+                mid_color = self.color_codes.get(self.band2_var.get(), ('', '#000000'))[1]
+                band_colors = [self.color_codes[self.band1_var.get()][1], mid_color, self.color_codes[self.band2_var.get()][1], self.color_codes[self.multiplier_var.get()][1], self.tolerance_colors[self.tolerance_var.get()][1]]
+            except Exception:
+                band_colors = ['#000000'] * 5
+        else:
+            band_positions = [110, 170, 230, 290]
+
+        for i, pos in enumerate(band_positions[:len(band_colors)]):
+            color = band_colors[i]
+            self.res_canvas.create_rectangle(pos-8, 22, pos+8, 58, fill=color, outline='')
 
     def find_color_code(self):
         try:
@@ -276,7 +342,7 @@ class ElectronicTool:
 
     def create_series_parallel_tab(self):
         # Frame per input
-        input_frame = ttk.LabelFrame(self.series_parallel_frame, text="Inserisci Resistenze — separa con virgola")
+        input_frame = ttk.LabelFrame(self.series_parallel_frame, text="Inserisci Resistenze — valori con tolleranza per singolo componente")
         input_frame.pack(fill=tk.X, padx=10, pady=10)
 
         # Tipo di connessione
@@ -288,23 +354,45 @@ class ElectronicTool:
         ttk.Radiobutton(conn_frame, text="Serie", variable=self.conn_type, value="serie").pack(side=tk.LEFT, padx=10)
         ttk.Radiobutton(conn_frame, text="Parallelo", variable=self.conn_type, value="parallelo").pack(side=tk.LEFT)
 
-        # Inserimento resistenze
-        res_frame = ttk.Frame(input_frame)
-        res_frame.pack(fill=tk.X, padx=5, pady=5)
+        # Lista dinamica di resistenze (valore + tolleranza)
+        list_frame = ttk.Frame(input_frame)
+        list_frame.pack(fill=tk.X, padx=5, pady=5)
 
-        ttk.Label(res_frame, text="Resistenze (Ω):").pack(side=tk.LEFT, padx=5)
-        self.resistances_entry = ttk.Entry(res_frame, width=50)
-        self.resistances_entry.pack(side=tk.LEFT, padx=5, pady=5)
-        self.resistances_entry.insert(0, "1000, 2000, 3000")
+        ttk.Label(list_frame, text="Riferimento: Valore (Ω)    Tolleranza (%)").grid(row=0, column=0, columnspan=3, sticky=tk.W)
+        self.res_rows = []
 
-        # Tolleranza
-        tol_frame = ttk.Frame(input_frame)
-        tol_frame.pack(fill=tk.X, padx=5, pady=5)
+        def add_res_row(value='1000', tol='5'):
+            row = {}
+            r = len(self.res_rows) + 1
+            row['val'] = ttk.Entry(list_frame, width=20)
+            row['val'].grid(row=r, column=0, padx=5, pady=2)
+            row['val'].insert(0, str(value))
+            row['tol'] = ttk.Entry(list_frame, width=10)
+            row['tol'].grid(row=r, column=1, padx=5, pady=2)
+            row['tol'].insert(0, str(tol))
+            btn = ttk.Button(list_frame, text='Rimuovi', command=lambda rw=row: remove_res_row(rw))
+            btn.grid(row=r, column=2, padx=5, pady=2)
+            row['btn'] = btn
+            self.res_rows.append(row)
 
-        ttk.Label(tol_frame, text="Tolleranza (%):").pack(side=tk.LEFT, padx=5)
-        self.tolerance_entry = ttk.Entry(tol_frame, width=10)
-        self.tolerance_entry.pack(side=tk.LEFT, padx=5, pady=5)
-        self.tolerance_entry.insert(0, "5")
+        def remove_res_row(row):
+            try:
+                row['val'].destroy(); row['tol'].destroy(); row['btn'].destroy()
+                self.res_rows.remove(row)
+                # ricompatta le righe
+                for idx, rw in enumerate(self.res_rows, start=1):
+                    rw['val'].grid(row=idx, column=0)
+                    rw['tol'].grid(row=idx, column=1)
+                    rw['btn'].grid(row=idx, column=2)
+            except Exception:
+                pass
+
+        # Inizializza con due resistenze
+        add_res_row('1000', '5')
+        add_res_row('2000', '5')
+
+        add_btn = ttk.Button(list_frame, text='Aggiungi Resistenza', command=lambda: add_res_row('1000', '5'))
+        add_btn.grid(row=99, column=0, pady=6, sticky=tk.W)
 
         # Serie commerciali
         series_frame = ttk.Frame(input_frame)
@@ -313,7 +401,7 @@ class ElectronicTool:
         ttk.Label(series_frame, text="Serie commerciale:").pack(side=tk.LEFT, padx=5)
         self.series_var = tk.StringVar(value="E12")
         self.series_combo = ttk.Combobox(series_frame, textvariable=self.series_var,
-                                         values=list(self.e_series.keys()), width=10)
+                         values=list(self.e_series.keys()), width=10)
         self.series_combo.pack(side=tk.LEFT, padx=5, pady=5)
 
         # Pulsanti
@@ -340,11 +428,15 @@ class ElectronicTool:
 
     def calculate_series_parallel(self):
         try:
-            # Parse resistenze
-            resistances_str = self.resistances_entry.get()
-            resistances = [float(x.strip()) for x in resistances_str.split(',')]
-
-            tolerance = float(self.tolerance_entry.get())
+            # Leggi resistenze e tolleranze dalle righe
+            resistances = []
+            tolerances = []
+            for rw in self.res_rows:
+                try:
+                    resistances.append(float(rw['val'].get()))
+                    tolerances.append(float(rw['tol'].get()))
+                except Exception:
+                    pass
 
             if self.conn_type.get() == "serie":
                 total_resistance = sum(resistances)
@@ -354,14 +446,17 @@ class ElectronicTool:
                 calculation = "1 / (" + " + ".join([f"1/{self.format_value(r)}" for r in resistances]) + ")"
 
             # Calcola tolleranza
-            min_total = total_resistance * (1 - tolerance / 100)
-            max_total = total_resistance * (1 + tolerance / 100)
+            # Calcola tolleranza totale approssimata (non-lineare per parallelo)
+            # Per semplicità mostriamo range usando la tolleranza media
+            tol_mean = sum(tolerances) / len(tolerances) if tolerances else 0
+            min_total = total_resistance * (1 - tol_mean / 100)
+            max_total = total_resistance * (1 + tol_mean / 100)
 
-            result = f"Resistenze: {resistances_str}\n"
+            result = f"Resistenze: {[self.format_value(r) for r in resistances]}\n"
             result += f"Connessione: {self.conn_type.get().title()}\n"
             result += f"Calcolo: {calculation}\n\n"
             result += f"Resistenza totale: {self.format_value(total_resistance)}\n"
-            result += f"Tolleranza: ±{tolerance}%\n"
+            result += f"Tolleranza (media): ±{tol_mean}%\n"
             result += f"Range: {self.format_value(min_total)} - {self.format_value(max_total)}"
 
             self.series_result_text.delete(1.0, tk.END)
