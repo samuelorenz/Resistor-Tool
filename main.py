@@ -6,13 +6,17 @@ import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import json
+import sys
+import traceback
+from tkinter.scrolledtext import ScrolledText
 
 
 class ElectronicTool:
     def __init__(self, root):
         self.root = root
-        self.root.title("Electronic Tool - Analisi Resistenze")
-        self.root.geometry("1000x800")
+        self.root.title("Electronic Tool — Analisi e Didattica sulle Resistenze")
+        self.root.geometry("1100x820")
+        self.set_style()
 
         # Valori commerciali standard
         self.e_series = {
@@ -69,7 +73,27 @@ class ElectronicTool:
 
         self.create_widgets()
 
+    def set_style(self):
+        style = ttk.Style(self.root)
+        try:
+            style.theme_use('clam')
+        except Exception:
+            pass
+        style.configure('TFrame', background='#F5F7FA')
+        style.configure('TLabel', background='#F5F7FA')
+        style.configure('Header.TLabel', font=('Segoe UI', 12, 'bold'))
+        style.configure('Accent.TButton', foreground='#FFFFFF', background='#2E5AAC')
+        self.root.configure(background='#F5F7FA')
+
     def create_widgets(self):
+        # Menu principale
+        self.create_menu()
+
+        # Header informativo
+        header = ttk.Frame(self.root)
+        header.pack(fill=tk.X, padx=12, pady=(8, 0))
+        ttk.Label(header, text='Electronic Tool — Resistenza e Circuiti', style='Header.TLabel').pack(side=tk.LEFT)
+
         # Notebook per le diverse funzionalità
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -96,7 +120,7 @@ class ElectronicTool:
 
     def create_color_tab(self):
         # Frame per input
-        input_frame = ttk.LabelFrame(self.color_frame, text="Inserisci Codice Colori")
+        input_frame = ttk.LabelFrame(self.color_frame, text="Inserisci Codice Colori — istruzioni: scegli le bande e premi 'Calcola Valore'")
         input_frame.pack(fill=tk.X, padx=10, pady=10)
 
         # Bande di colore
@@ -139,11 +163,11 @@ class ElectronicTool:
         result_frame = ttk.LabelFrame(self.color_frame, text="Risultato")
         result_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        self.color_result_text = tk.Text(result_frame, height=8, width=60)
+        self.color_result_text = ScrolledText(result_frame, height=8, width=60)
         self.color_result_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         # Frame per input valore numerico
-        value_frame = ttk.LabelFrame(self.color_frame, text="Trova Codice Colori")
+        value_frame = ttk.LabelFrame(self.color_frame, text="Trova Codice Colori — inserisci valore e trova il codice commerciale più vicino")
         value_frame.pack(fill=tk.X, padx=10, pady=10)
 
         ttk.Label(value_frame, text="Valore (Ω):").grid(row=0, column=0, padx=5, pady=5)
@@ -252,7 +276,7 @@ class ElectronicTool:
 
     def create_series_parallel_tab(self):
         # Frame per input
-        input_frame = ttk.LabelFrame(self.series_parallel_frame, text="Inserisci Resistenze")
+        input_frame = ttk.LabelFrame(self.series_parallel_frame, text="Inserisci Resistenze — separa con virgola")
         input_frame.pack(fill=tk.X, padx=10, pady=10)
 
         # Tipo di connessione
@@ -307,7 +331,7 @@ class ElectronicTool:
         result_frame = ttk.LabelFrame(self.series_parallel_frame, text="Risultato")
         result_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        self.series_result_text = tk.Text(result_frame, height=12, width=60)
+        self.series_result_text = ScrolledText(result_frame, height=12, width=60)
         self.series_result_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         # Frame per grafico
@@ -422,7 +446,8 @@ class ElectronicTool:
         x_pos = range(len(resistances))
         values = [r / total_resistance * 100 for r in resistances]  # Percentuale del totale
 
-        bars = ax.bar(x_pos, values, color=['red', 'blue', 'green', 'orange', 'purple'][:len(resistances)])
+        colors = ['#c44e52', '#4c72b0', '#55a868', '#ffb347', '#7f5acd']
+        bars = ax.bar(x_pos, values, color=colors[:len(resistances)])
         ax.set_xlabel('Resistenze')
         ax.set_ylabel('Percentuale del totale (%)')
         ax.set_title('Distribuzione delle resistenze')
@@ -484,7 +509,7 @@ class ElectronicTool:
         result_frame = ttk.LabelFrame(self.monte_carlo_frame, text="Risultati")
         result_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        self.mc_result_text = tk.Text(result_frame, height=8, width=60)
+        self.mc_result_text = ScrolledText(result_frame, height=8, width=60)
         self.mc_result_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         # Frame per grafico
@@ -621,14 +646,14 @@ class ElectronicTool:
         result_frame = ttk.LabelFrame(self.power_frame, text="Risultati")
         result_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        self.power_result_text = tk.Text(result_frame, height=10, width=60)
+        self.power_result_text = ScrolledText(result_frame, height=10, width=60)
         self.power_result_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         # Frame per informazioni package
         package_frame = ttk.LabelFrame(self.power_frame, text="Informazioni Package")
         package_frame.pack(fill=tk.X, padx=10, pady=10)
 
-        self.package_info_text = tk.Text(package_frame, height=6, width=60)
+        self.package_info_text = ScrolledText(package_frame, height=6, width=60)
         self.package_info_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         self.update_package_info()
@@ -726,11 +751,79 @@ class ElectronicTool:
         else:
             return f"{value * 1e6:.3f} µΩ"
 
+    def create_menu(self):
+        menubar = tk.Menu(self.root)
+
+        # File
+        file_menu = tk.Menu(menubar, tearoff=0)
+        file_menu.add_command(label='Esporta risultato...', command=self.export_results)
+        file_menu.add_separator()
+        file_menu.add_command(label='Esci', command=self.root.quit)
+        menubar.add_cascade(label='File', menu=file_menu)
+
+        # Aiuto
+        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(label='Guida rapida', command=self.show_quick_help)
+        help_menu.add_command(label='Informazioni', command=self.show_about)
+        menubar.add_cascade(label='Aiuto', menu=help_menu)
+
+        self.root.config(menu=menubar)
+
+        # Barra di stato
+        self.status = tk.StringVar()
+        self.status.set('Pronto')
+        status_bar = ttk.Label(self.root, textvariable=self.status, relief=tk.SUNKEN, anchor=tk.W)
+        status_bar.pack(fill=tk.X, side=tk.BOTTOM)
+
+    def export_results(self):
+        try:
+            content = ''
+            # raccoglie contenuti visibili
+            for widget in (self.color_result_text, self.series_result_text, self.mc_result_text, self.power_result_text):
+                try:
+                    content += widget.get(1.0, tk.END).strip() + '\n\n'
+                except Exception:
+                    pass
+
+            if not content.strip():
+                messagebox.showinfo('Esporta', 'Nessun risultato da esportare')
+                return
+
+            path = filedialog.asksaveasfilename(defaultextension='.txt', filetypes=[('Testo', '*.txt')])
+            if path:
+                with open(path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                messagebox.showinfo('Esporta', f'Risultati esportati in {path}')
+                self.status.set(f'Risultati esportati: {path}')
+
+        except Exception as e:
+            messagebox.showerror('Errore export', str(e))
+
+    def show_quick_help(self):
+        help_text = (
+            'Guida rapida:\n\n'
+            '- Codice Colori: ricava valore dalla combinazione di bande.\n'
+            '- Serie/Parallelo: calcola resistenza totale e ottimizza con serie commerciali.\n'
+            '- Monte Carlo: simula variazioni dovute a tolleranza componenti.\n'
+            '- Potenza: valuta potenza dissipata e confronto con package.'
+        )
+        messagebox.showinfo('Guida rapida', help_text)
+
+    def show_about(self):
+        about = 'Electronic Tool — versione educativa\nAutore: (tuo nome)\nFunzionalità: analisi resistenze, ottimizzazione e simulazioni Monte Carlo.'
+        messagebox.showinfo('Informazioni', about)
+
 
 def main():
-    root = tk.Tk()
-    app = ElectronicTool(root)
-    root.mainloop()
+    try:
+        root = tk.Tk()
+        app = ElectronicTool(root)
+        root.mainloop()
+    except Exception:
+        with open('error.log', 'w', encoding='utf-8') as f:
+            traceback.print_exc(file=f)
+        # Rilancia l'eccezione dopo averla loggata per visibilità in terminale
+        raise
 
 
 if __name__ == "__main__":
