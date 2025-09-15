@@ -9,6 +9,11 @@ import json
 import sys
 import traceback
 from tkinter.scrolledtext import ScrolledText
+from resistor_lib import (
+    e_series, package_power, color_codes, tolerance_colors,
+    get_color_from_digit, get_multiplier_color, format_value,
+    find_best_commercial_value, calculate_series_total, calc_tolerance_range
+)
 
 
 class ElectronicTool:
@@ -18,58 +23,11 @@ class ElectronicTool:
         self.root.geometry("1100x820")
         self.set_style()
 
-        # Valori commerciali standard
-        self.e_series = {
-            "E12": [1.0, 1.2, 1.5, 1.8, 2.2, 2.7, 3.3, 3.9, 4.7, 5.6, 6.8, 8.2],
-            "E24": [1.0, 1.1, 1.2, 1.3, 1.5, 1.6, 1.8, 2.0, 2.2, 2.4, 2.7, 3.0,
-                    3.3, 3.6, 3.9, 4.3, 4.7, 5.1, 5.6, 6.2, 6.8, 7.5, 8.2, 9.1],
-            "E48": [1.00, 1.05, 1.10, 1.15, 1.21, 1.27, 1.33, 1.40, 1.47, 1.54, 1.62, 1.69,
-                    1.78, 1.87, 1.96, 2.05, 2.15, 2.26, 2.37, 2.49, 2.61, 2.74, 2.87, 3.01,
-                    3.16, 3.32, 3.48, 3.65, 3.83, 4.02, 4.22, 4.42, 4.64, 4.87, 5.11, 5.36,
-                    5.62, 5.90, 6.19, 6.49, 6.81, 7.15, 7.50, 7.87, 8.25, 8.66, 9.09, 9.53]
-        }
-
-        # Package e potenze
-        self.package_power = {
-            "0201": 0.05,  # 1/20 W
-            "0402": 0.0625,  # 1/16 W
-            "0603": 0.1,  # 1/10 W
-            "0805": 0.125,  # 1/8 W
-            "1206": 0.25,  # 1/4 W
-            "1210": 0.33,  # 1/3 W
-            "1812": 0.5,  # 1/2 W
-            "2010": 0.75,  # 3/4 W
-            "2512": 1.0,  # 1 W
-            "AXIAL": 0.25,  # 1/4 W
-            "RADIAL": 0.25  # 1/4 W
-        }
-
-        # Colori per codice a colori
-        self.color_codes = {
-            "nero": (0, "#000000"),
-            "marrone": (1, "#8B4513"),
-            "rosso": (2, "#FF0000"),
-            "arancione": (3, "#FFA500"),
-            "giallo": (4, "#FFFF00"),
-            "verde": (5, "#008000"),
-            "blu": (6, "#0000FF"),
-            "viola": (7, "#800080"),
-            "grigio": (8, "#808080"),
-            "bianco": (9, "#FFFFFF"),
-            "oro": (-1, "#FFD700"),
-            "argento": (-2, "#C0C0C0")
-        }
-
-        self.tolerance_colors = {
-            "marrone": (1, "#8B4513"),
-            "rosso": (2, "#FF0000"),
-            "verde": (0.5, "#008000"),
-            "blu": (0.25, "#0000FF"),
-            "viola": (0.1, "#800080"),
-            "grigio": (0.05, "#808080"),
-            "oro": (5, "#FFD700"),
-            "argento": (10, "#C0C0C0")
-        }
+        # Imported constants and helpers from resistor_lib
+        self.e_series = e_series
+        self.package_power = package_power
+        self.color_codes = color_codes
+        self.tolerance_colors = tolerance_colors
 
         self.create_widgets()
 
@@ -310,10 +268,10 @@ class ElectronicTool:
                     if error < best_error:
                         best_error = error
                         best_match = {
-                            'band1': self.get_color_from_digit(int(str(base_value)[0])),
-                            'band2': self.get_color_from_digit(int(str(base_value)[1])) if len(
+                            'band1': get_color_from_digit(int(str(base_value)[0])),
+                            'band2': get_color_from_digit(int(str(base_value)[1])) if len(
                                 str(base_value)) > 1 else "nero",
-                            'multiplier': self.get_multiplier_color(decade),
+                            'multiplier': get_multiplier_color(decade),
                             'tolerance': "oro",  # ±5%
                             'tolerance_value': 5,
                             'actual_value': actual_value,
@@ -325,20 +283,7 @@ class ElectronicTool:
 
         return best_match
 
-    def get_color_from_digit(self, digit):
-        colors = ["nero", "marrone", "rosso", "arancione", "giallo",
-                  "verde", "blu", "viola", "grigio", "bianco"]
-        return colors[digit] if 0 <= digit <= 9 else "nero"
-
-    def get_multiplier_color(self, exponent):
-        if exponent == -2:
-            return "argento"
-        elif exponent == -1:
-            return "oro"
-        elif 0 <= exponent <= 9:
-            return self.get_color_from_digit(exponent)
-        else:
-            return "nero"
+    # helper functions moved to resistor_lib
 
     def create_series_parallel_tab(self):
         # Frame per input
@@ -470,20 +415,28 @@ class ElectronicTool:
 
     def optimize_with_commercial(self):
         try:
-            resistances_str = self.resistances_entry.get()
-            resistances = [float(x.strip()) for x in resistances_str.split(',')]
-            tolerance = float(self.tolerance_entry.get())
-            series = self.e_series[self.series_var.get()]
+            # Leggi resistori dalle righe dinamiche
+            resistances = []
+            tolerances = []
+            for rw in self.res_rows:
+                try:
+                    resistances.append(float(rw['val'].get()))
+                    tolerances.append(float(rw['tol'].get()))
+                except Exception:
+                    pass
+
+            if not resistances:
+                messagebox.showwarning('Ottimizza', 'Nessuna resistenza inserita')
+                return
+
+            series = self.e_series.get(self.series_var.get(), list(self.e_series.values())[0])
 
             optimized_resistances = []
-            total_error = 0
-
             result = "Ottimizzazione con valori commerciali:\n\n"
 
             for i, target_r in enumerate(resistances):
                 best_match = self.find_best_commercial_value(target_r, series)
                 optimized_resistances.append(best_match['value'])
-                total_error += best_match['error']
 
                 result += f"R{i + 1}: {self.format_value(target_r)} → {self.format_value(best_match['value'])} "
                 result += f"(errore: {best_match['error']:.2f}%)\n"
@@ -496,7 +449,7 @@ class ElectronicTool:
 
             original_total = sum(resistances) if self.conn_type.get() == "serie" else 1 / sum(
                 1 / r for r in resistances)
-            total_error_percent = abs((optimized_total - original_total) / original_total) * 100
+            total_error_percent = abs((optimized_total - original_total) / original_total) * 100 if original_total != 0 else 0
 
             result += f"\nResistenza totale originale: {self.format_value(original_total)}\n"
             result += f"Resistenza totale ottimizzata: {self.format_value(optimized_total)}\n"
@@ -613,12 +566,34 @@ class ElectronicTool:
 
     def run_monte_carlo(self):
         try:
-            # Parametri
-            r1_nominal = float(self.r1_entry.get())
-            r2_nominal = float(self.r2_entry.get())
+            # Parametri: preferisci usare le prime 2 resistenze da self.res_rows se presenti
             vin = float(self.vin_entry.get())
-            tolerance = float(self.mc_tolerance_entry.get()) / 100
             iterations = int(self.mc_iterations_entry.get())
+
+            r1_nominal = None
+            r2_nominal = None
+            tol1 = None
+            tol2 = None
+
+            if len(self.res_rows) >= 2:
+                try:
+                    r1_nominal = float(self.res_rows[0]['val'].get())
+                    tol1 = float(self.res_rows[0]['tol'].get()) / 100
+                except Exception:
+                    r1_nominal = None
+                try:
+                    r2_nominal = float(self.res_rows[1]['val'].get())
+                    tol2 = float(self.res_rows[1]['tol'].get()) / 100
+                except Exception:
+                    r2_nominal = None
+
+            # Fallback ai campi manuali
+            if r1_nominal is None:
+                r1_nominal = float(self.r1_entry.get())
+                tol1 = float(self.mc_tolerance_entry.get()) / 100
+            if r2_nominal is None:
+                r2_nominal = float(self.r2_entry.get())
+                tol2 = float(self.mc_tolerance_entry.get()) / 100
 
             # Simulazione Monte Carlo
             vout_values = []
@@ -626,9 +601,9 @@ class ElectronicTool:
             r2_values = []
 
             for _ in range(iterations):
-                # Genera valori con tolleranza
-                r1 = r1_nominal * random.uniform(1 - tolerance, 1 + tolerance)
-                r2 = r2_nominal * random.uniform(1 - tolerance, 1 + tolerance)
+                # Genera valori con tolleranza individuale
+                r1 = r1_nominal * random.uniform(1 - tol1, 1 + tol1)
+                r2 = r2_nominal * random.uniform(1 - tol2, 1 + tol2)
 
                 # Calcola Vout
                 vout = vin * r2 / (r1 + r2)
@@ -647,7 +622,8 @@ class ElectronicTool:
             vout_theoretical = vin * r2_nominal / (r1_nominal + r2_nominal)
 
             result = f"Simulazione Monte Carlo ({iterations} iterazioni)\n"
-            result += f"Tolleranza: ±{tolerance * 100}%\n\n"
+            tol_mean_percent = ((tol1 if tol1 is not None else 0) + (tol2 if tol2 is not None else 0)) / 2 * 100
+            result += f"Tolleranza (media componenti): ±{tol_mean_percent:.2f}%\n\n"
             result += f"Vout teorico: {vout_theoretical:.3f} V\n"
             result += f"Media Vout: {vout_mean:.3f} V\n"
             result += f"Deviazione standard: {vout_std:.3f} V\n"
