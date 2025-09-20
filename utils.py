@@ -41,18 +41,18 @@ def export_results(app):
 
 def show_quick_help():
     help_text = (
-        'Guida rapida:\n\n'
-        '- Codice Colori: ricava valore dalla combinazione di bande.\n'
-        '- Serie/Parallelo: calcola resistenza totale e ottimizza con serie commerciali.\n'
-
-        '- Monte Carlo: simula variazioni dovute a tolleranza componenti.\n'
-        '- Potenza: valuta potenza dissipata e confronto con package.'
+        "Guida all'Apprendimento:\n\n"
+        "Questo tool è progettato per essere anche uno strumento didattico. Ogni scheda ti guida attraverso un concetto chiave:\n\n"
+        "- Codice Colori: Impara a decodificare le bande colorate dei resistori (IEC 60062) e a trovare i valori commerciali più vicini nelle serie standard (IEC 60063).\n\n"
+        "- Serie/Parallelo: Scopri come calcolare la resistenza equivalente e come il mondo reale ti costringe a ottimizzare i tuoi progetti usando valori standard, analizzando l'impatto dell'errore introdotto.\n\n"
+        "- Analisi Monte Carlo: Comprendi perché i circuiti reali non si comportano sempre come previsto. Questa simulazione ti mostra l'impatto statistico della tolleranza dei componenti sul risultato finale.\n\n"
+        "- Potenza e Derating: Impara a non bruciare i tuoi componenti! Calcola la potenza dissipata e scopri perché scegliere un package adeguato, applicando un margine di sicurezza (derating), è fondamentale per l'affidabilità."
     )
-    messagebox.showinfo('Guida rapida', help_text)
+    messagebox.showinfo('Guida Rapida all\'Apprendimento', help_text)
 
 def show_about():
-    about = '''Electronic Tool — v1.1 (Standard-Aware)
-Autore: (tuo nome)
+    about = '''Electronic Tool — v1.2 (Educational & Standard-Aware)
+Autore: Samu
 
 Questo strumento è inteso per uso didattico e di prototipazione rapida.
 I calcoli si basano sui seguenti standard di riferimento:
@@ -61,22 +61,22 @@ I calcoli si basano sui seguenti standard di riferimento:
 
 Disclaimer:
 I valori di potenza e le tolleranze sono indicativi. Per progetti professionali, critici o di produzione, è OBBLIGATORIO consultare i datasheet dei componenti specifici e applicare le normative di settore (es. AEC-Q200 per automotive, MIL-PRF per applicazioni militari, RoHS/REACH per i materiali). L'autore non si assume responsabilità per errori derivanti da un uso improprio dello strumento.'''
-    messagebox.showinfo('Informazioni', about)
+    messagebox.showinfo('Informazioni e Disclaimer', about)
 
 def create_menu(app):
     menubar = tk.Menu(app.root)
 
     # File
     file_menu = tk.Menu(menubar, tearoff=0)
-    file_menu.add_command(label='Esporta risultato...', command=lambda: export_results(app))
+    file_menu.add_command(label='Esporta Risultati...', command=lambda: export_results(app))
     file_menu.add_separator()
     file_menu.add_command(label='Esci', command=app.root.quit)
     menubar.add_cascade(label='File', menu=file_menu)
 
     # Aiuto
     help_menu = tk.Menu(menubar, tearoff=0)
-    help_menu.add_command(label='Guida rapida', command=show_quick_help)
-    help_menu.add_command(label='Informazioni', command=show_about)
+    help_menu.add_command(label='Guida all\'Apprendimento', command=show_quick_help)
+    help_menu.add_command(label='Informazioni e Disclaimer', command=show_about)
     menubar.add_cascade(label='Aiuto', menu=help_menu)
 
     app.root.config(menu=menubar)
