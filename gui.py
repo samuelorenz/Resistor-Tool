@@ -79,7 +79,7 @@ class ElectronicTool:
         status_bar.pack(fill=tk.X, side=tk.BOTTOM)
 
     def create_color_tab(self):
-        input_frame = ttk.LabelFrame(self.color_frame, text="Inserisci Codice Colori — istruzioni: scegli le bande e premi 'Calcola Valore'")
+        input_frame = ttk.LabelFrame(self.color_frame, text="Inserisci Codice Colori (IEC 60062)")
         input_frame.pack(fill=tk.X, padx=10, pady=10)
 
         bands_frame = ttk.Frame(input_frame)
@@ -133,7 +133,7 @@ class ElectronicTool:
         self.color_result_text = ScrolledText(result_frame, height=8, width=60)
         self.color_result_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        value_frame = ttk.LabelFrame(self.color_frame, text="Trova Codice Colori — inserisci valore e trova il codice commerciale più vicino")
+        value_frame = ttk.LabelFrame(self.color_frame, text="Trova Codice Colori (Serie E, IEC 60063)")
         value_frame.pack(fill=tk.X, padx=10, pady=10)
 
         ttk.Label(value_frame, text="Valore (Ω):").grid(row=0, column=0, padx=5, pady=5)
@@ -259,7 +259,7 @@ class ElectronicTool:
         series_frame = ttk.Frame(input_frame)
         series_frame.pack(fill=tk.X, padx=5, pady=5)
 
-        ttk.Label(series_frame, text="Serie commerciale:").pack(side=tk.LEFT, padx=5)
+        ttk.Label(series_frame, text="Serie commerciale (IEC 60063):").pack(side=tk.LEFT, padx=5)
         self.series_var = tk.StringVar(value="E12")
         self.series_combo = ttk.Combobox(series_frame, textvariable=self.series_var,
                          values=list(self.e_series.keys()), width=10)
@@ -525,15 +525,18 @@ class ElectronicTool:
 
         info = f"Package: {package}\n"
         info += f"Potenza massima: {power} W\n"
-        info += f"Potenza consigliata (50%): {power * 0.5} W\n"
-        info += f"Potenza minima consigliata: {power * 0.25} W\n\n"
+        info += f"Potenza consigliata (50% safety margin): {power * 0.5:.4f} W\n\n"
 
-        info += "Guida ai package:\n"
-        info += "• 0201/0402: Circuiti ad alta densità\n"
+        info += "Guida generica ai package SMD:\n"
+        info += "• 0201/0402: Alta densità, bassa potenza\n"
         info += "• 0603/0805: Uso generale\n"
         info += "• 1206/1210: Potenze medie\n"
-        info += "• 1812/2010/2512: Potenze elevate\n"
-        info += "• AXIAL/RADIAL: Through-hole, potenze alte"
+        info += "• 2010/2512: Potenze elevate\n\n"
+        
+        info += "Nota importante:\n"
+        info += "I valori di potenza sono puramente indicativi. Per applicazioni reali, è \n"
+        info += "obbligatorio consultare il datasheet del produttore. Considerare sempre \n"
+        info += "il derating di potenza in base a temperatura e affidabilità (es. AEC-Q200)."
 
         self.package_info_text.delete(1.0, tk.END)
         self.package_info_text.insert(1.0, info)
