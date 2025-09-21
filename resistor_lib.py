@@ -25,53 +25,54 @@ e_series = {
 
 # Package e potenze (valori tipici, consultare datasheet per derating)
 package_power = {
-    "0201": 0.05,
-    "0402": 0.0625,
-    "0603": 0.1,
-    "0805": 0.125,
-    "1206": 0.25,
-    "1210": 0.33,
-    "1812": 0.5,
-    "2010": 0.75,
-    "2512": 1.0,
-    "AXIAL": 0.25, # Valore generico, dipende da dimensioni
-    "RADIAL": 0.25 # Valore generico
+    "0201": 0.05, "0402": 0.0625, "0603": 0.1, "0805": 0.125,
+    "1206": 0.25, "1210": 0.33, "1812": 0.5, "2010": 0.75, "2512": 1.0,
+    "AXIAL": 0.25, "RADIAL": 0.25
 }
+
+# Parametri per il derating termico (valori tipici, da datasheet)
+derating_start_temp_c = 70  # Temperatura (in °C) a cui inizia il derating
+derating_percent_per_c = 0.8 # Percentuale di potenza persa per ogni °C sopra la start_temp
 
 # Codice colori (IEC 60062)
 color_codes = {
-    "nero": (0, "#000000"),
-    "marrone": (1, "#8B4513"),
-    "rosso": (2, "#FF0000"),
-    "arancione": (3, "#FFA500"),
-    "giallo": (4, "#FFFF00"),
-    "verde": (5, "#008000"),
-    "blu": (6, "#0000FF"),
-    "viola": (7, "#800080"),
-    "grigio": (8, "#808080"),
-    "bianco": (9, "#FFFFFF"),
-    "oro": (-1, "#FFD700"),
-    "argento": (-2, "#C0C0C0")
+    "nero": (0, "#000000"), "marrone": (1, "#8B4513"), "rosso": (2, "#FF0000"),
+    "arancione": (3, "#FFA500"), "giallo": (4, "#FFFF00"), "verde": (5, "#008000"),
+    "blu": (6, "#0000FF"), "viola": (7, "#800080"), "grigio": (8, "#808080"),
+    "bianco": (9, "#FFFFFF"), "oro": (-1, "#FFD700"), "argento": (-2, "#C0C0C0")
 }
 
 # Tolleranze (IEC 60062)
 tolerance_colors = {
-    "marrone": (1, "#8B4513"),
-    "rosso": (2, "#FF0000"),
-    "verde": (0.5, "#008000"),
-    "blu": (0.25, "#0000FF"),
-    "viola": (0.1, "#800080"),
-    "grigio": (0.05, "#808080"),
-    "oro": (5, "#FFD700"),
-    "argento": (10, "#C0C0C0"),
-    "nessuno": (20, "#D3D3D3") # Grigio chiaro per rappresentare l'assenza
+    "marrone": (1, "#8B4513"), "rosso": (2, "#FF0000"), "verde": (0.5, "#008000"),
+    "blu": (0.25, "#0000FF"), "viola": (0.1, "#800080"), "grigio": (0.05, "#808080"),
+    "oro": (5, "#FFD700"), "argento": (10, "#C0C0C0"), "nessuno": (20, "#D3D3D3")
+}
+
+# Standard EIA-96 per resistori SMD (1% tolleranza)
+eia96_value_codes = {
+    '01': 100, '02': 102, '03': 105, '04': 107, '05': 110, '06': 113, '07': 115, '08': 118,
+    '09': 121, '10': 124, '11': 127, '12': 130, '13': 133, '14': 137, '15': 140, '16': 143,
+    '17': 147, '18': 150, '19': 154, '20': 158, '21': 162, '22': 165, '23': 169, '24': 174,
+    '25': 178, '26': 182, '27': 187, '28': 191, '29': 196, '30': 200, '31': 205, '32': 210,
+    '33': 215, '34': 221, '35': 226, '36': 232, '37': 237, '38': 243, '39': 249, '40': 255,
+    '41': 261, '42': 267, '43': 274, '44': 280, '45': 287, '46': 294, '47': 301, '48': 309,
+    '49': 316, '50': 324, '51': 332, '52': 340, '53': 348, '54': 357, '55': 365, '56': 374,
+    '57': 383, '58': 392, '59': 402, '60': 412, '61': 422, '62': 432, '63': 442, '64': 453,
+    '65': 464, '66': 475, '67': 487, '68': 499, '69': 511, '70': 523, '71': 536, '72': 549,
+    '73': 562, '74': 576, '75': 590, '76': 604, '77': 619, '78': 634, '79': 649, '80': 665,
+    '81': 681, '82': 698, '83': 715, '84': 732, '85': 750, '86': 768, '87': 787, '88': 806,
+    '89': 825, '90': 845, '91': 866, '92': 887, '93': 909, '94': 931, '95': 953, '96': 976
+}
+
+eia96_multiplier_codes = {
+    'Z': 0.001, 'Y': 0.01, 'X': 0.1, 'A': 1, 'B': 10, 'C': 100, 'D': 1000, 'E': 10000, 'F': 100000
 }
 
 def get_color_from_digit(digit):
     colors = ["nero", "marrone", "rosso", "arancione", "giallo",
               "verde", "blu", "viola", "grigio", "bianco"]
     return colors[digit] if 0 <= digit <= 9 else "nero"
-
 
 def get_multiplier_color(exponent):
     if exponent == -2:
@@ -83,8 +84,9 @@ def get_multiplier_color(exponent):
     else:
         return "nero"
 
-
 def format_value(value):
+    if value >= 1e9:
+        return f"{value / 1e9:.3f} GΩ"
     if value >= 1e6:
         return f"{value / 1e6:.3f} MΩ"
     elif value >= 1e3:
@@ -96,13 +98,11 @@ def format_value(value):
     else:
         return f"{value * 1e6:.3f} µΩ"
 
-
 def find_best_commercial_value(target_value, series):
     best_error = float('inf')
     best_value = target_value
 
-    # Aumenta il range delle decadi per coprire valori più alti
-    for decade in range(-2, 8): # da 0.01 a 100M
+    for decade in range(-2, 8):
         for base_value in series:
             actual_value = base_value * (10 ** decade)
             error = abs((actual_value - target_value) / target_value) * 100
@@ -125,7 +125,6 @@ def calculate_series_total(resistances, conn_type='serie'):
         calc_str = '1 / (' + ' + '.join(f'1/{r}' for r in resistances) + ')'
 
     return total, calc_str
-
 
 def calc_tolerance_range(total_resistance, tolerances):
     if not tolerances:
