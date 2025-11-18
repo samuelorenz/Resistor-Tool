@@ -227,3 +227,196 @@ def run_monte_carlo_logic(vin, iterations, r1_nominal, tol1, r2_nominal, tol2):
         return result, vout_values, vout_theoretical, None
     except Exception as e:
         return None, None, None, f"Errore nella simulazione: {str(e)}"
+
+def design_voltage_divider_logic(vin, vout_target, e_series_values):
+    """
+    Trova le migliori coppie di resistori da una serie E per un partitore di tensione.
+    """
+    if vin <= 0 or vout_target <= 0 or vout_target >= vin:
+        return None, "Vin deve essere > 0, Vout deve essere > 0 e Vin > Vout."
+
+    target_ratio = vout_target / vin
+    best_pairs = []
+
+    # Genera un range realistico di valori commerciali
+    commercial_values = []
+    for decade in range(-1, 7):  # da 0.1 a 10M ohm
+        for base_val in e_series_values:
+            commercial_values.append(base_val * (10**decade))
+
+    # Itera su tutte le coppie possibili
+    for r1 in commercial_values:
+        for r2 in commercial_values:
+            # Evita divisione per zero e coppie identiche se non necessario
+            if r1 == 0 or r2 == 0:
+                continue
+
+            actual_ratio = r2 / (r1 + r2)
+            error = abs((actual_ratio - target_ratio) / target_ratio) * 100
+
+            # Salva le N migliori coppie
+            if len(best_pairs) < 10 or error < best_pairs[-1]['error']:
+                best_pairs.append({
+                    'r1': r1,
+                    'r2': r2,
+                    'vout_actual': vin * actual_ratio,
+                    'error': error
+                })
+                # Mantieni la lista ordinata per errore e limitata a 10 elementi
+                best_pairs.sort(key=lambda x: x['error'])
+                if len(best_pairs) > 10:
+                    best_pairs.pop()
+
+    # Formatta il risultato per la visualizzazione
+    if not best_pairs:
+        return None, "Nessuna combinazione trovata. Prova a cambiare la serie E."
+
+    result = f"--- Progettazione Partitore di Tensione ---\n\n"
+    result += f"Obiettivo: Vin={vin}V, Vout={vout_target:.3f}V (Rapporto: {target_ratio:.4f})\n"
+    result += "Migliori 10 coppie di resistori trovate:\n\n"
+    result += "{:<15} {:<15} {:<15} {:<10}\n".format("R1", "R2", "Vout Reale", "Errore")
+    result += "-"*55 + "\n"
+
+    for pair in best_pairs:
+        result += "{:<15} {:<15} {:<15.3f} {:<10.2f}%\n".format(
+            format_value(pair['r1']),
+            format_value(pair['r2']),
+            pair['vout_actual'],
+            pair['error']
+        )
+
+    result += "\nSpiegazione: Sono state testate tutte le combinazioni di resistori della serie E scelta per trovare quelle che minimizzano l'errore sul rapporto Vout/Vin."
+
+    return result, None
+
+def find_best_commercial_value(target_value, series_values):
+    """
+    Trova il miglior valore commerciale in una data serie E.
+    """
+    best_match = {'value': -1, 'error': float('inf')}
+
+    for decade in range(-2, 8):  # da 0.01 a 100M
+        for base in series_values:
+            value = base * (10**decade)
+            error = abs((value - target_value) / target_value) * 100
+            if error < best_match['error']:
+                best_match['value'] = value
+                best_match['error'] = error
+
+    return best_match
+
+def calculate_led_resistor_logic(v_supply, v_led, i_led, e_series_values, package_power):
+    """
+    Calcola il resistore per un LED, suggerisce un valore commerciale e un package.
+    """
+    if v_supply <= v_led:
+        return None, "La tensione di alimentazione (Vsupply) deve essere maggiore della tensione del LED (Vf)."
+    if i_led <= 0:
+        return None, "La corrente del LED (If) deve essere maggiore di zero."
+
+    # 1. Calcolo del resistore ideale
+    r_ideal = (v_supply - v_led) / (i_led / 1000.0)  # i_led è in mA
+
+    # 2. Trova il valore commerciale più vicino
+    best_match = find_best_commercial_value(r_ideal, e_series_values)
+    r_commercial = best_match['value']
+
+    # 3. Calcolo della potenza dissipata con il valore commerciale
+    i_actual = (v_supply - v_led) / r_commercial
+    power_dissipated = (v_supply - v_led) * i_actual
+
+    # 4. Raccomandazione del package
+    recommended_package = "Nessuno (potenza troppo elevata)"
+    safety_factor = 2.0  # Fattore di sicurezza minimo del 200%
+
+    # Ordina i package per potenza crescente
+    sorted_packages = sorted(package_power.items(), key=lambda item: item[1])
+
+    for pkg_name, pkg_power in sorted_packages:
+        if pkg_power >= (power_dissipated * safety_factor):
+            recommended_package = f"{pkg_name} ({pkg_power}W)"
+            break
+
+    # Formattazione del risultato
+    result = f"--- Calcolo Resistore per LED ---\n\n"
+    result += f"Parametri di Input:\n"
+    result += f"- Tensione di Alimentazione: {v_supply} V\n"
+    result += f"- Tensione di Caduta LED (Vf): {v_led} V\n"
+    result += f"- Corrente LED (If): {i_led} mA\n\n"
+
+    result += f"--- Risultati ---\n"
+    result += f"1. Valore Resistore Ideale: {format_value(r_ideal)}\n"
+    result += f"2. Valore Commerciale più Vicino: {format_value(r_commercial)} (Errore: {best_match['error']:.2f}%)\n"
+    result += f"   - Corrente Reale con questo resistore: {i_actual*1000:.2f} mA\n"
+    result += f"3. Potenza Dissipata dal Resistore: {power_dissipated:.4f} W\n"
+    result += f"4. Package Raccomandato (con fattore di sicurezza >{safety_factor:.0f}x): {recommended_package}\n\n"
+
+    result += "Spiegazione:\n"
+    result += "Il resistore limita la corrente che scorre nel LED. Il valore commerciale è stato scelto dalla serie E selezionata. La potenza dissipata determina la dimensione fisica (package) del resistore necessaria per operare in sicurezza."
+
+    return result, None
+
+def design_rc_filter_logic(f_c_target, r_series_values, c_series_values):
+    """
+    Trova le migliori coppie R/C per un filtro passa-basso.
+    """
+    if f_c_target <= 0:
+        return None, "La frequenza di taglio deve essere maggiore di zero."
+
+    best_pairs = []
+
+    # Genera un range di valori commerciali per i resistori
+    commercial_resistors = []
+    for decade in range(0, 7):  # 1 ohm a 10M ohm
+        for base_val in r_series_values:
+            commercial_resistors.append(base_val * (10**decade))
+
+    # Genera un range di valori commerciali per i condensatori
+    commercial_capacitors = []
+    for decade in range(-12, -4):  # 1pF a 1uF
+        for base_val in c_series_values:
+            commercial_capacitors.append(base_val * (10**decade))
+
+    # Itera sui resistori e trova il miglior condensatore per ciascuno
+    for r in commercial_resistors:
+        # Calcola il condensatore ideale per questo resistore
+        c_ideal = 1 / (2 * np.pi * r * f_c_target)
+
+        # Trova il condensatore commerciale più vicino
+        best_c = min(commercial_capacitors, key=lambda c: abs(c - c_ideal))
+
+        # Calcola la frequenza reale e l'errore
+        f_c_actual = 1 / (2 * np.pi * r * best_c)
+        error = abs((f_c_actual - f_c_target) / f_c_target) * 100
+
+        # Salva le N migliori coppie
+        if len(best_pairs) < 15 or error < best_pairs[-1]['error']:
+            best_pairs.append({
+                'r': r,
+                'c': best_c,
+                'f_c_actual': f_c_actual,
+                'error': error
+            })
+            best_pairs.sort(key=lambda x: x['error'])
+            if len(best_pairs) > 15:
+                best_pairs.pop()
+
+    if not best_pairs:
+        return None, "Nessuna combinazione R/C trovata."
+
+    result = f"--- Progettazione Filtro RC Passa-Basso ---\n\n"
+    result += f"Obiettivo Frequenza di Taglio (fc): {format_value(f_c_target, unit='Hz')}\n"
+    result += "Migliori 15 combinazioni R/C trovate:\n\n"
+    result += "{:<15} {:<15} {:<20} {:<10}\n".format("Resistore", "Condensatore", "fc Reale", "Errore")
+    result += "-"*65 + "\n"
+
+    for pair in best_pairs:
+        result += "{:<15} {:<15} {:<20} {:<10.2f}%\n".format(
+            format_value(pair['r']),
+            format_value(pair['c'], unit='F'),
+            format_value(pair['f_c_actual'], unit='Hz'),
+            pair['error']
+        )
+
+    result += "\nSpiegazione: Per ogni resistore della serie E, è stato trovato il condensatore (anch'esso da una serie E) che minimizza l'errore sulla frequenza di taglio."
+    return result, None

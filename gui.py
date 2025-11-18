@@ -17,8 +17,12 @@ from logic import (
     optimize_with_commercial_logic,
     run_monte_carlo_logic,
     calculate_power_logic,
-    decode_smd_code_logic
+    decode_smd_code_logic,
+    design_voltage_divider_logic,
+    calculate_led_resistor_logic,
+    design_rc_filter_logic
 )
+from capacitor_lib import capacitor_e_series
 
 class ElectronicTool:
     def __init__(self, root):
@@ -28,6 +32,7 @@ class ElectronicTool:
         self.set_style()
 
         self.e_series = e_series
+        self.capacitor_e_series = capacitor_e_series
         self.package_power = package_power
         self.color_codes = color_codes
         self.tolerance_colors = tolerance_colors
@@ -75,6 +80,14 @@ class ElectronicTool:
         self.power_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.power_frame, text="Potenza e Derating")
         self.create_power_tab()
+
+        self.divider_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.divider_frame, text="Progettazione Partitore")
+        self.create_divider_tab()
+
+        self.design_calc_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.design_calc_frame, text="Calcolatori di Progettazione")
+        self.create_design_calculator_tab()
         
         self.status = tk.StringVar()
         self.status.set('Pronto')
@@ -454,6 +467,168 @@ class ElectronicTool:
         canvas = FigureCanvasTkAgg(fig, self.mc_graph_frame)
         canvas.draw()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    def create_divider_tab(self):
+        input_frame = ttk.LabelFrame(self.divider_frame, text="1. Imposta i Parametri del Partitore di Tensione")
+        input_frame.pack(fill=tk.X, padx=10, pady=10)
+
+        params_frame = ttk.Frame(input_frame)
+        params_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        ttk.Label(params_frame, text="Tensione di Ingresso (Vin):").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        self.divider_vin_entry = ttk.Entry(params_frame, width=15)
+        self.divider_vin_entry.grid(row=0, column=1, padx=5, pady=5)
+        self.divider_vin_entry.insert(0, "12")
+
+        ttk.Label(params_frame, text="Tensione di Uscita (Vout) Desiderata:").grid(row=1, column=0, padx=5, pady=5, sticky=tk.W)
+        self.divider_vout_entry = ttk.Entry(params_frame, width=15)
+        self.divider_vout_entry.grid(row=1, column=1, padx=5, pady=5)
+        self.divider_vout_entry.insert(0, "3.3")
+
+        ttk.Label(params_frame, text="Serie E per Resistori:").grid(row=2, column=0, padx=5, pady=5, sticky=tk.W)
+        self.divider_series_var = tk.StringVar(value="E24")
+        self.divider_series_combo = ttk.Combobox(params_frame, textvariable=self.divider_series_var, values=list(self.e_series.keys()), width=12)
+        self.divider_series_combo.grid(row=2, column=1, padx=5, pady=5)
+
+        calc_btn = ttk.Button(self.divider_frame, text="Trova Migliori Combinazioni", command=self.design_voltage_divider)
+        calc_btn.pack(pady=10)
+
+        result_frame = ttk.LabelFrame(self.divider_frame, text="Risultati e Combinazioni Suggerite")
+        result_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        self.divider_result_text = ScrolledText(result_frame, height=15, width=80, wrap=tk.WORD, font=("Courier New", 9))
+        self.divider_result_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+    def design_voltage_divider(self):
+        try:
+            vin = float(self.divider_vin_entry.get())
+            vout_target = float(self.divider_vout_entry.get())
+            series_name = self.divider_series_var.get()
+            e_series_values = self.e_series[series_name]
+
+            result, error = design_voltage_divider_logic(vin, vout_target, e_series_values)
+
+            if error:
+                messagebox.showerror("Errore di Progettazione", error)
+            else:
+                self.divider_result_text.delete(1.0, tk.END)
+                self.divider_result_text.insert(1.0, result)
+
+        except ValueError:
+            messagebox.showerror("Errore", "Assicurati che Vin e Vout siano valori numerici validi.")
+        except Exception as e:
+            messagebox.showerror("Errore Inaspettato", f"Si è verificato un errore: {str(e)}")
+
+    def create_design_calculator_tab(self):
+        # --- LED Resistor Calculator ---
+        led_frame = ttk.LabelFrame(self.design_calc_frame, text="Calcolatore Resistore per LED")
+        led_frame.pack(fill=tk.X, padx=10, pady=10)
+
+        params_frame = ttk.Frame(led_frame)
+        params_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        ttk.Label(params_frame, text="Tensione Alimentazione (V):").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        self.led_vsupply_entry = ttk.Entry(params_frame, width=15)
+        self.led_vsupply_entry.grid(row=0, column=1, padx=5, pady=5)
+        self.led_vsupply_entry.insert(0, "5")
+
+        ttk.Label(params_frame, text="Tensione LED (Vf):").grid(row=1, column=0, padx=5, pady=5, sticky=tk.W)
+        self.led_vf_entry = ttk.Entry(params_frame, width=15)
+        self.led_vf_entry.grid(row=1, column=1, padx=5, pady=5)
+        self.led_vf_entry.insert(0, "2.1") # Valore tipico per un LED rosso
+
+        ttk.Label(params_frame, text="Corrente LED (mA):").grid(row=2, column=0, padx=5, pady=5, sticky=tk.W)
+        self.led_if_entry = ttk.Entry(params_frame, width=15)
+        self.led_if_entry.grid(row=2, column=1, padx=5, pady=5)
+        self.led_if_entry.insert(0, "20")
+
+        ttk.Label(params_frame, text="Serie E per Resistore:").grid(row=3, column=0, padx=5, pady=5, sticky=tk.W)
+        self.led_series_var = tk.StringVar(value="E24")
+        self.led_series_combo = ttk.Combobox(params_frame, textvariable=self.led_series_var, values=list(self.e_series.keys()), width=12)
+        self.led_series_combo.grid(row=3, column=1, padx=5, pady=5)
+
+        calc_btn = ttk.Button(led_frame, text="Calcola Resistore e Package", command=self.calculate_led_resistor)
+        calc_btn.pack(pady=10)
+
+        result_frame = ttk.LabelFrame(self.design_calc_frame, text="Risultati e Raccomandazioni")
+        result_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        self.led_result_text = ScrolledText(result_frame, height=15, width=80, wrap=tk.WORD)
+        self.led_result_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        # --- RC Filter Designer ---
+        filter_frame = ttk.LabelFrame(self.design_calc_frame, text="Progettazione Filtro RC Passa-Basso")
+        filter_frame.pack(fill=tk.X, padx=10, pady=10)
+
+        filter_params_frame = ttk.Frame(filter_frame)
+        filter_params_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        ttk.Label(filter_params_frame, text="Frequenza di Taglio (Hz):").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        self.filter_fc_entry = ttk.Entry(filter_params_frame, width=15)
+        self.filter_fc_entry.grid(row=0, column=1, padx=5, pady=5)
+        self.filter_fc_entry.insert(0, "1000")
+
+        ttk.Label(filter_params_frame, text="Serie E (Resistori):").grid(row=1, column=0, padx=5, pady=5, sticky=tk.W)
+        self.filter_r_series_var = tk.StringVar(value="E24")
+        self.filter_r_series_combo = ttk.Combobox(filter_params_frame, textvariable=self.filter_r_series_var, values=list(self.e_series.keys()), width=12)
+        self.filter_r_series_combo.grid(row=1, column=1, padx=5, pady=5)
+
+        ttk.Label(filter_params_frame, text="Serie E (Condensatori):").grid(row=2, column=0, padx=5, pady=5, sticky=tk.W)
+        self.filter_c_series_var = tk.StringVar(value="E12")
+        self.filter_c_series_combo = ttk.Combobox(filter_params_frame, textvariable=self.filter_c_series_var, values=list(self.capacitor_e_series.keys()), width=12)
+        self.filter_c_series_combo.grid(row=2, column=1, padx=5, pady=5)
+
+        filter_calc_btn = ttk.Button(filter_frame, text="Trova Combinazioni R/C", command=self.design_rc_filter)
+        filter_calc_btn.pack(pady=10)
+
+        filter_result_frame = ttk.LabelFrame(self.design_calc_frame, text="Combinazioni R/C Suggerite")
+        filter_result_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        self.filter_result_text = ScrolledText(filter_result_frame, height=15, width=80, wrap=tk.WORD, font=("Courier New", 9))
+        self.filter_result_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+    def calculate_led_resistor(self):
+        try:
+            v_supply = float(self.led_vsupply_entry.get())
+            v_led = float(self.led_vf_entry.get())
+            i_led = float(self.led_if_entry.get())
+            series_name = self.led_series_var.get()
+            e_series_values = self.e_series[series_name]
+
+            result, error = calculate_led_resistor_logic(v_supply, v_led, i_led, e_series_values, self.package_power)
+
+            if error:
+                messagebox.showerror("Errore di Calcolo", error)
+            else:
+                self.led_result_text.delete(1.0, tk.END)
+                self.led_result_text.insert(1.0, result)
+
+        except ValueError:
+            messagebox.showerror("Errore", "Assicurati che tutti i campi siano valori numerici validi.")
+        except Exception as e:
+            messagebox.showerror("Errore Inaspettato", f"Si è verificato un errore: {str(e)}")
+
+    def design_rc_filter(self):
+        try:
+            f_c_target = float(self.filter_fc_entry.get())
+            r_series_name = self.filter_r_series_var.get()
+            c_series_name = self.filter_c_series_var.get()
+
+            r_series_values = self.e_series[r_series_name]
+            c_series_values = self.capacitor_e_series[c_series_name]
+
+            result, error = design_rc_filter_logic(f_c_target, r_series_values, c_series_values)
+
+            if error:
+                messagebox.showerror("Errore di Progettazione", error)
+            else:
+                self.filter_result_text.delete(1.0, tk.END)
+                self.filter_result_text.insert(1.0, result)
+
+        except ValueError:
+            messagebox.showerror("Errore", "Assicurati che la frequenza sia un valore numerico valido.")
+        except Exception as e:
+            messagebox.showerror("Errore Inaspettato", f"Si è verificato un errore: {str(e)}")
 
     def update_package_info(self):
         # Questo metodo non è più necessario, le info sono integrate nel calcolo principale
