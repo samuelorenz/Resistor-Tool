@@ -319,9 +319,14 @@ def design_voltage_divider_logic(vin, vout_target, e_series_values=None, custom_
 
     # Formatta il risultato per la visualizzazione
     if not best_pairs:
-        return None, "Nessuna combinazione trovata. Prova a cambiare la serie E."
+        msg = "Nessuna combinazione trovata."
+        if custom_values: msg += " La BOM caricata non ha abbastanza valori compatibili."
+        else: msg += " Prova a cambiare la serie E."
+        return None, msg
 
-    result = f"--- Progettazione Partitore di Tensione ---\n\n"
+    source_name = "BOM Personalizzata" if custom_values else "Serie E"
+    result = f"--- Progettazione Partitore di Tensione ---\n"
+    result += f"Sorgente Valori: {source_name}\n\n"
     result += f"Obiettivo: Vin={vin}V, Vout={vout_target:.3f}V (Rapporto: {target_ratio:.4f})\n"
     result += "Migliori 10 coppie di resistori trovate:\n\n"
     result += "{:<15} {:<15} {:<15} {:<10}\n".format("R1", "R2", "Vout Reale", "Errore")
@@ -400,7 +405,9 @@ def calculate_led_resistor_logic(v_supply, v_led, i_led, e_series_values=None, p
             break
 
     # Formattazione del risultato
-    result = f"--- Calcolo Resistore per LED ---\n\n"
+    source_name = "BOM Personalizzata" if custom_values else "Serie E"
+    result = f"--- Calcolo Resistore per LED ---\n"
+    result += f"Sorgente Valori: {source_name}\n\n"
     result += f"Parametri di Input:\n"
     result += f"- Tensione di Alimentazione: {v_supply} V\n"
     result += f"- Tensione di Caduta LED (Vf): {v_led} V\n"
@@ -471,7 +478,9 @@ def design_rc_filter_logic(f_c_target, r_series_values=None, c_series_values=Non
     if not best_pairs:
         return None, "Nessuna combinazione R/C trovata."
 
-    result = f"--- Progettazione Filtro RC Passa-Basso ---\n\n"
+    source_name = "BOM Personalizzata" if custom_values else "Serie E"
+    result = f"--- Progettazione Filtro RC Passa-Basso ---\n"
+    result += f"Sorgente Resistori: {source_name}\n\n"
     result += f"Obiettivo Frequenza di Taglio (fc): {format_value(f_c_target, unit='Hz')}\n"
     result += "Migliori 15 combinazioni R/C trovate:\n\n"
     result += "{:<15} {:<15} {:<20} {:<10}\n".format("Resistore", "Condensatore", "fc Reale", "Errore")

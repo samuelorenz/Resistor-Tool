@@ -54,11 +54,14 @@ def parse_bom_excel(file_path):
             return None, "Formato BOM non riconosciuto (colonne 'VALUE' e 'REFDES' non trovate)."
         
         df = pd.read_excel(file_path, header=header_row)
-        # Filtra resistori: Reference che inizia con 'R'
-        res_df = df[df['REFDES'].astype(str).str.startswith('R', na=False)]
+        # Normalizziamo i nomi delle colonne per sicurezza (tutti in minuscolo)
+        df.columns = [str(c).strip().lower() for c in df.columns]
+        
+        # Filtra resistori: Reference che inizia con 'r' (case-insensitive)
+        res_df = df[df['refdes'].astype(str).str.upper().str.startswith('R', na=False)]
         
         values = set()
-        for v in res_df['VALUE']:
+        for v in res_df['value']:
             norm_v = normalize_resistor_value(v)
             if norm_v is not None:
                 values.add(norm_v)
@@ -163,7 +166,7 @@ def create_menu(app):
     # BOM
     bom_menu = tk.Menu(menubar, tearoff=0)
     bom_menu.add_command(label='Importa BOM Excel...', command=lambda: import_bom(app))
-    bom_menu.add_checkbutton(label='Attiva Modalita BOM', variable=app.use_bom)
+    bom_menu.add_checkbutton(label='Attiva Modalità BOM', variable=app.use_bom)
     bom_menu.add_separator()
     bom_menu.add_command(label='Rimuovi BOM', command=app.clear_bom)
     menubar.add_cascade(label='BOM', menu=bom_menu)
