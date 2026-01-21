@@ -9,6 +9,16 @@ from resistor_lib import (
 )
 from utils import format_value
 
+def parse_value_to_mantissa_exp(val):
+    """Semplifica un valore Ohm in mantissa (2 cifre) ed esponente per codice colori."""
+    if val <= 0: return 0, 0
+    exp = int(np.floor(np.log10(val))) - 1
+    mantissa = int(round(val / (10**exp)))
+    if mantissa >= 100: # Gestione arrotondamento (es. 9.99 -> 10.0)
+        mantissa //= 10
+        exp += 1
+    return mantissa, exp
+
 def decode_smd_code_logic(code, code_type):
     try:
         code = code.strip().upper()
@@ -138,20 +148,44 @@ def calculate_color_code_logic(color_codes, tolerance_colors, band1, band2, mult
     except Exception as e:
         return None, f"Errore nel calcolo: {str(e)}"
 
-def find_color_code_logic(value, e_series_data):
+def find_color_code_logic(value, e_series_data, custom_values=None):
     try:
-        best_match = find_best_color_match(value, e_series_data)
+        best_match = find_best_color_match(value, e_series_data, custom_values=custom_values)
         if best_match:
-            result = f"--- Ricerca Valore Commerciale (IEC 60063) ---\n\nValore richiesto: {format_value(value)}\nSerie E selezionata: {best_match['series_name']}\n\nCodice colori suggerito per il valore più vicino:\n- Banda 1: {best_match['band1']}\n- Banda 2: {best_match['band2']}\n- Moltiplicatore: {best_match['multiplier']}\n- Tolleranza: {best_match['tolerance']} (±{best_match['tolerance_value']}%)\n\nValore commerciale ottenuto: {format_value(best_match['actual_value'])}\nErrore rispetto al valore richiesto: {best_match['error']:.2f}%\n\nSpiegazione:\nÈ stato cercato il valore standard nella serie selezionata che minimizza l'errore percentuale."
+            source = "BOM Personalizzata" if custom_values else f"Serie {best_match['series_name']}"
+            result = f"--- Ricerca Valore Commerciale ---\n\nValore richiesto: {format_value(value)}\nSorgente: {source}\n\nCodice colori suggerito per il valore più vicino:\n- Banda 1: {best_match['band1']}\n- Banda 2: {best_match['band2']}\n- Moltiplicatore: {best_match['multiplier']}\n- Tolleranza: {best_match['tolerance']} (±{best_match['tolerance_value']}%)\n\nValore trovato: {format_value(best_match['actual_value'])}\nErrore rispetto al valore richiesto: {best_match['error']:.2f}%\n\nSpiegazione:\nÈ stato cercato il valore più vicino tra quelli disponibili per minimizzare l'errore percentuale."
             return result, None
         else:
-            return None, "Nessun valore commerciale trovato"
+            return None, "Nessun valore trovato"
     except ValueError:
         return None, "Inserisci un valore numerico valido"
 
-def find_best_color_match(target_value, e_series_data):
+def find_best_color_match(target_value, e_series_data, custom_values=None):
     best_error = float("inf")
     best_match = None
+    
+    # Se abbiamo valori custom, cerchiamo in quelli
+    if custom_values:
+        for val in custom_values:
+            error = abs((val - target_value) / target_value) * 100
+            if error < best_error:
+                best_error = error
+                # Calcola bande per questo valore (approssimate a 2 cifre per semplicità visuale)
+                # NOTA: Per valori non standard da BOM, il codice colori potrebbe essere 
+                # un'approssimazione a 2 cifre + moltiplicatore
+                val_mantissa, val_exp = parse_value_to_mantissa_exp(val)
+                best_match = {
+                    "series_name": "BOM",
+                    "band1": get_color_from_digit(val_mantissa // 10),
+                    "band2": get_color_from_digit(val_mantissa % 10),
+                    "multiplier": get_multiplier_color(val_exp),
+                    "tolerance": "marrone", # Tipico per resistori di precisione da BOM
+                    "tolerance_value": 1,
+                    "actual_value": val,
+                    "error": error,
+                }
+        return best_match
+
     for series_name, series_values in e_series_data.items():
         for decade in range(-2, 8):
             for base_value in series_values:
@@ -199,14 +233,15 @@ def calculate_series_parallel_logic(resistances, tolerances, conn_type):
     except Exception as e:
         return None, None, f"Errore nel calcolo: {str(e)}"
 
-def optimize_with_commercial_logic(resistances, conn_type, series, e_series_data):
+def optimize_with_commercial_logic(resistances, conn_type, series, e_series_data, custom_values=None):
     try:
         if not resistances: return None, "Nessuna resistenza inserita"
         series_values = e_series_data.get(series, list(e_series_data.values())[0])
-        result = f"--- Ottimizzazione con Valori Commerciali (Serie {series}) ---\n\nSpiegazione: Ogni resistenza teorica viene sostituita con il valore più vicino disponibile nella serie E scelta.\n\n"
+        source_name = "BOM" if custom_values else f"Serie {series}"
+        result = f"--- Ottimizzazione con Valori Commerciali ({source_name}) ---\n\nOgni resistenza teorica viene sostituita con il valore più vicino disponibile.\n\n"
         optimized_resistances = []
         for i, target_r in enumerate(resistances):
-            best_match = find_best_commercial_value(target_r, series_values)
+            best_match = find_best_commercial_value(target_r, series_values, custom_values=custom_values)
             optimized_resistances.append(best_match["value"])
             result += f"- R{i + 1}: {format_value(target_r)} → {format_value(best_match['value'])} (Errore: {best_match['error']:.2f}%)\n"
         if conn_type == "serie":
@@ -239,9 +274,10 @@ def run_monte_carlo_logic(vin, iterations, r1_nominal, tol1, r2_nominal, tol2):
     except Exception as e:
         return None, None, None, f"Errore nella simulazione: {str(e)}"
 
-def design_voltage_divider_logic(vin, vout_target, e_series_values):
+def design_voltage_divider_logic(vin, vout_target, e_series_values=None, custom_values=None):
     """
-    Trova le migliori coppie di resistori da una serie E per un partitore di tensione.
+    Trova le migliori coppie di resistori per un partitore di tensione.
+    Supporta serie E o una lista personalizzata (BOM).
     """
     if vin <= 0 or vout_target <= 0 or vout_target >= vin:
         return None, "Vin deve essere > 0, Vout deve essere > 0 e Vin > Vout."
@@ -249,11 +285,14 @@ def design_voltage_divider_logic(vin, vout_target, e_series_values):
     target_ratio = vout_target / vin
     best_pairs = []
 
-    # Genera un range realistico di valori commerciali
+    # Genera i valori disponibili
     commercial_values = []
-    for decade in range(-1, 7):  # da 0.1 a 10M ohm
-        for base_val in e_series_values:
-            commercial_values.append(base_val * (10**decade))
+    if custom_values:
+        commercial_values = custom_values
+    elif e_series_values:
+        for decade in range(-1, 7):  # da 0.1 a 10M ohm
+            for base_val in e_series_values:
+                commercial_values.append(base_val * (10**decade))
 
     # Itera su tutte le coppie possibili
     for r1 in commercial_values:
@@ -300,23 +339,35 @@ def design_voltage_divider_logic(vin, vout_target, e_series_values):
 
     return result, None
 
-def find_best_commercial_value(target_value, series_values):
+def find_best_commercial_value(target_value, series_values=None, custom_values=None):
     """
-    Trova il miglior valore commerciale in una data serie E.
+    Trova il miglior valore commerciale. 
+    Se custom_values è fornito (es. da una BOM), cerca solo in quelli.
+    Altrimenti usa series_values (valori base) e calcola le decadi.
     """
     best_match = {'value': -1, 'error': float('inf')}
-
-    for decade in range(-2, 8):  # da 0.01 a 100M
-        for base in series_values:
-            value = base * (10**decade)
+    
+    if custom_values:
+        for value in custom_values:
             error = abs((value - target_value) / target_value) * 100
             if error < best_match['error']:
                 best_match['value'] = value
                 best_match['error'] = error
+        return best_match
 
+    # Comportamento standard con serie E
+    if series_values:
+        for decade in range(-2, 8):  # da 0.01 a 100M
+            for base in series_values:
+                value = base * (10**decade)
+                error = abs((value - target_value) / target_value) * 100
+                if error < best_match['error']:
+                    best_match['value'] = value
+                    best_match['error'] = error
+    
     return best_match
 
-def calculate_led_resistor_logic(v_supply, v_led, i_led, e_series_values, package_power):
+def calculate_led_resistor_logic(v_supply, v_led, i_led, e_series_values=None, package_power=None, custom_values=None):
     """
     Calcola il resistore per un LED, suggerisce un valore commerciale e un package.
     """
@@ -329,7 +380,7 @@ def calculate_led_resistor_logic(v_supply, v_led, i_led, e_series_values, packag
     r_ideal = (v_supply - v_led) / (i_led / 1000.0)  # i_led è in mA
 
     # 2. Trova il valore commerciale più vicino
-    best_match = find_best_commercial_value(r_ideal, e_series_values)
+    best_match = find_best_commercial_value(r_ideal, series_values=e_series_values, custom_values=custom_values)
     r_commercial = best_match['value']
 
     # 3. Calcolo della potenza dissipata con il valore commerciale
@@ -367,7 +418,7 @@ def calculate_led_resistor_logic(v_supply, v_led, i_led, e_series_values, packag
 
     return result, None
 
-def design_rc_filter_logic(f_c_target, r_series_values, c_series_values):
+def design_rc_filter_logic(f_c_target, r_series_values=None, c_series_values=None, custom_values=None):
     """
     Trova le migliori coppie R/C per un filtro passa-basso.
     """
@@ -376,11 +427,16 @@ def design_rc_filter_logic(f_c_target, r_series_values, c_series_values):
 
     best_pairs = []
 
-    # Genera un range di valori commerciali per i resistori
+    # Genera i valori disponibili per i resistori
     commercial_resistors = []
-    for decade in range(0, 7):  # 1 ohm a 10M ohm
-        for base_val in r_series_values:
-            commercial_resistors.append(base_val * (10**decade))
+    if custom_values:
+        commercial_resistors = custom_values
+    elif r_series_values:
+        for decade in range(0, 7):  # 1 ohm a 10M ohm
+            for base_val in r_series_values:
+                commercial_resistors.append(base_val * (10**decade))
+    else:
+        return None, "Nessun valore resistivo fornito."
 
     # Genera un range di valori commerciali per i condensatori
     commercial_capacitors = []
@@ -432,7 +488,7 @@ def design_rc_filter_logic(f_c_target, r_series_values, c_series_values):
     result += "\nSpiegazione: Per ogni resistore della serie E, è stato trovato il condensatore (anch'esso da una serie E) che minimizza l'errore sulla frequenza di taglio."
     return result, None
 
-def calculate_regulator_logic(vin, vout_target, regulator_name, e_series_values):
+def calculate_regulator_logic(vin, vout_target, regulator_name, e_series_values=None, custom_values=None):
     """
     Calcola le coppie R1/R2 per un regolatore lineare (es. LM317).
     """

@@ -45,6 +45,11 @@ class ElectronicTool:
         self.color_codes = color_codes
         self.tolerance_colors = tolerance_colors
         
+        # BOM State
+        self.bom_values = []
+        self.use_bom = tk.BooleanVar(value=False)
+        self.bom_path = tk.StringVar(value="")
+        
         self.set_style()
         self.create_widgets()
         self.show_dashboard()
@@ -86,6 +91,10 @@ class ElectronicTool:
         self.nav_label = ttk.Label(self.top_bar, text=" > Dashboard", style='Subheader.TLabel')
         self.nav_label.pack(side=tk.LEFT, padx=10)
 
+        # BOM Status in Top Bar
+        self.bom_status_label = ttk.Label(self.top_bar, text="", foreground="#059669", font=('Segoe UI', 9, 'italic'))
+        self.bom_status_label.pack(side=tk.RIGHT, padx=10)
+
         # Main Content Area
         self.main_container = ttk.Frame(self.root)
         self.main_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
@@ -99,6 +108,27 @@ class ElectronicTool:
         for widget in self.main_container.winfo_children():
             widget.destroy()
         self.nav_label.config(text=f" > {new_nav_text}")
+        self.update_bom_status()
+
+    def update_bom_status(self):
+        if self.bom_path.get():
+            status = f"BOM: {self.bom_path.get()} ({len(self.bom_values)} val)"
+            if self.use_bom.get():
+                status += " [ATTIVA]"
+                self.bom_status_label.config(foreground="#2563EB")
+            else:
+                status += " [DISATTIVA]"
+                self.bom_status_label.config(foreground="#6B7280")
+            self.bom_status_label.config(text=status)
+        else:
+            self.bom_status_label.config(text="")
+
+    def clear_bom(self):
+        self.bom_values = []
+        self.bom_path.set("")
+        self.use_bom.set(False)
+        self.update_bom_status()
+        messagebox.showinfo("BOM", "BOM rimossa correttamente.")
 
     def show_dashboard(self):
         self.clear_main_container("Dashboard")
@@ -108,24 +138,24 @@ class ElectronicTool:
         
         categories = [
             ("CALCOLATORI BASE", [
-                ("🎨 Codice Colori", "color"),
-                ("🔢 Codici SMD", "smd")
+                ("Codice Colori", "color"),
+                ("Codici SMD", "smd")
             ]),
             ("ANALISI", [
-                ("⚡ Serie/Parallelo", "series_parallel"),
-                ("📊 Monte Carlo", "monte_carlo"),
-                ("🌡️ Potenza/Derating", "power")
+                ("Serie/Parallelo", "series_parallel"),
+                ("Monte Carlo", "monte_carlo"),
+                ("Potenza/Derating", "power")
             ]),
             ("PROGETTAZIONE", [
-                ("📐 Partitore", "divider"),
-                ("🔌 Regolatori", "regulator"),
-                ("〰️ Filtri RC", "filter"),
-                ("💡 LED Resistor", "led")
+                ("Partitore", "divider"),
+                ("Regolatori", "regulator"),
+                ("Filtri RC", "filter"),
+                ("LED Resistor", "led")
             ]),
             ("UTILITY", [
-                ("📏 Tabella AWG", "awg"),
-                ("🌊 Ripartitore I", "curr_div"),
-                ("📚 Glossario", "glossary")
+                ("Tabella AWG", "awg"),
+                ("Ripartitore I", "curr_div"),
+                ("Glossario", "glossary")
             ])
         ]
         
@@ -197,16 +227,16 @@ class ElectronicTool:
         self.tolerance_combo.set("oro")
         calc_btn = ttk.Button(input_frame, text="Decodifica e Spiega", command=self.calculate_color_code)
         calc_btn.pack(pady=10)
-        draw_frame = ttk.Frame(self.color_frame)
+        draw_frame = ttk.Frame(self.main_container)
         draw_frame.pack(fill=tk.X, padx=10, pady=5)
         self.res_canvas = tk.Canvas(draw_frame, width=440, height=80, bg='#FFFFFF', highlightthickness=1, highlightbackground='#CCCCCC')
         self.res_canvas.pack(side=tk.LEFT, padx=5)
         self.update_resistor_drawing()
-        result_frame = ttk.LabelFrame(self.color_frame, text="Analisi e Spiegazione")
+        result_frame = ttk.LabelFrame(self.main_container, text="Analisi e Spiegazione")
         result_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         self.color_result_text = ScrolledText(result_frame, height=10, width=60, wrap=tk.WORD)
         self.color_result_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        value_frame = ttk.LabelFrame(self.color_frame, text="2. Trova Valore Commerciale e Codice (IEC 60063)")
+        value_frame = ttk.LabelFrame(self.main_container, text="2. Trova Valore Commerciale e Codice (IEC 60063)")
         value_frame.pack(fill=tk.X, padx=10, pady=10)
         ttk.Label(value_frame, text="Valore Desiderato (Ω):").grid(row=0, column=0, padx=5, pady=5)
         self.value_entry = ttk.Entry(value_frame, width=15)
@@ -347,7 +377,8 @@ class ElectronicTool:
     def find_color_code(self):
         try:
             value = float(self.value_entry.get())
-            result, error = find_color_code_logic(value, self.e_series)
+            custom = self.bom_values if (self.use_bom.get() and self.bom_values) else None
+            result, error = find_color_code_logic(value, self.e_series, custom_values=custom)
             if error: messagebox.showwarning("Attenzione", error)
             else: 
                 self.color_result_text.delete(1.0, tk.END)
@@ -426,8 +457,11 @@ class ElectronicTool:
 
     def optimize_with_commercial(self):
         try:
-            resistances = [float(rw['val'].get()) for rw in self.res_rows]
-            result, error = optimize_with_commercial_logic(resistances, self.conn_type.get(), self.series_var.get(), self.e_series)
+            ress = [float(row['val'].get()) for row in self.res_rows if row['val'].get()]
+            conn = self.conn_type.get()
+            series = self.series_var.get()
+            custom = self.bom_values if (hasattr(self, 'use_bom') and self.use_bom.get() and self.bom_values) else None
+            result, error = optimize_with_commercial_logic(ress, conn, series, self.e_series, custom_values=custom)
             if error: messagebox.showwarning('Ottimizza', error)
             else: 
                 self.series_result_text.delete(1.0, tk.END)
@@ -580,11 +614,10 @@ class ElectronicTool:
     def design_voltage_divider(self):
         try:
             vin = float(self.divider_vin_entry.get())
-            vout_target = float(self.divider_vout_entry.get())
-            series_name = self.divider_series_var.get()
-            e_series_values = self.e_series[series_name]
-
-            result, error = design_voltage_divider_logic(vin, vout_target, e_series_values)
+            vout = float(self.divider_vout_entry.get())
+            series = self.divider_series_var.get()
+            custom = self.bom_values if (hasattr(self, 'use_bom') and self.use_bom.get() and self.bom_values) else None
+            result, error = design_voltage_divider_logic(vin, vout, self.e_series[series], custom_values=custom)
 
             if error:
                 messagebox.showerror("Errore di Progettazione", error)
@@ -658,10 +691,9 @@ class ElectronicTool:
             v_supply = float(self.led_vsupply_entry.get())
             v_led = float(self.led_vf_entry.get())
             i_led = float(self.led_if_entry.get())
-            series_name = self.led_series_var.get()
-            e_series_values = self.e_series[series_name]
-
-            result, error = calculate_led_resistor_logic(v_supply, v_led, i_led, e_series_values, self.package_power)
+            series = self.led_series_var.get()
+            custom = self.bom_values if (hasattr(self, 'use_bom') and self.use_bom.get() and self.bom_values) else None
+            result, error = calculate_led_resistor_logic(v_supply, v_led, i_led, self.e_series[series], self.package_power, custom_values=custom)
 
             if error:
                 messagebox.showerror("Errore di Calcolo", error)
@@ -682,8 +714,8 @@ class ElectronicTool:
 
             r_series_values = self.e_series[r_series_name]
             c_series_values = self.capacitor_e_series[c_series_name]
-
-            result, error = design_rc_filter_logic(f_c_target, r_series_values, c_series_values)
+            custom = self.bom_values if (hasattr(self, 'use_bom') and self.use_bom.get() and self.bom_values) else None
+            result, error = design_rc_filter_logic(f_c_target, r_series_values, c_series_values, custom_values=custom)
 
             if error:
                 messagebox.showerror("Errore di Progettazione", error)
@@ -721,7 +753,8 @@ class ElectronicTool:
     def calculate_regulator(self):
         try:
             vout = float(self.reg_vout_entry.get())
-            result, error = calculate_regulator_logic(0, vout, self.reg_name_var.get(), self.e_series["E24"])
+            custom = self.bom_values if (hasattr(self, 'use_bom') and self.use_bom.get() and self.bom_values) else None
+            result, error = calculate_regulator_logic(0, vout, self.reg_name_var.get(), self.e_series["E24"], custom_values=custom)
             if error: messagebox.showerror("Errore", error)
             else:
                 self.reg_result_text.delete(1.0, tk.END)

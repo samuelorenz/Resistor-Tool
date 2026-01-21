@@ -3,6 +3,83 @@ import tkinter as tk
 from tkinter import messagebox, filedialog
 import json
 import os
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
+
+def normalize_resistor_value(val_str):
+    """Converte stringhe come '4,7Kohm', '1k2', '10ohm' in float (Ohm)."""
+    if pd.isna(val_str) or not str(val_str).strip():
+        return None
+    s = str(val_str).lower().replace(',', '.').replace('ohm', '').strip()
+    
+    multiplier = 1.0
+    if 'k' in s:
+        multiplier = 1e3
+        parts = s.split('k')
+        if parts[0] and parts[1]: # 1k2 case -> 1.2k
+            try:
+                dec_val = float(parts[1])
+                return (float(parts[0]) + dec_val / (10**len(parts[1]))) * multiplier
+            except ValueError: pass
+        s = s.replace('k', '')
+    elif 'm' in s and 'meg' not in s: # handle M or Meg
+        multiplier = 1e6
+        s = s.replace('m', '')
+    elif 'meg' in s:
+        multiplier = 1e6
+        s = s.replace('meg', '')
+    
+    try:
+        return float(s) * multiplier
+    except ValueError:
+        return None
+
+def parse_bom_excel(file_path):
+    """Legge un file Excel e restituisce un set di valori Ohm unici per i resistori."""
+    if not pd:
+        return None, "Libreria pandas non trovata."
+    try:
+        # Trova header automaticamente
+        df_raw = pd.read_excel(file_path, header=None, nrows=20)
+        header_row = -1
+        for i, row in df_raw.iterrows():
+            row_values = [str(x).strip().lower() for x in row.values]
+            if 'value' in row_values and 'refdes' in row_values:
+                header_row = i
+                break
+        
+        if header_row == -1:
+            return None, "Formato BOM non riconosciuto (colonne 'VALUE' e 'REFDES' non trovate)."
+        
+        df = pd.read_excel(file_path, header=header_row)
+        # Filtra resistori: Reference che inizia con 'R'
+        res_df = df[df['REFDES'].astype(str).str.startswith('R', na=False)]
+        
+        values = set()
+        for v in res_df['VALUE']:
+            norm_v = normalize_resistor_value(v)
+            if norm_v is not None:
+                values.add(norm_v)
+        
+        return sorted(list(values)), None
+    except Exception as e:
+        return None, str(e)
+
+def import_bom(app):
+    path = filedialog.askopenfilename(filetypes=[('Excel', '*.xlsx *.xls')])
+    if path:
+        values, error = parse_bom_excel(path)
+        if error:
+            messagebox.showerror("Errore BOM", error)
+        else:
+            app.bom_values = values
+            app.bom_path.set(os.path.basename(path))
+            messagebox.showinfo("BOM Caricata", f"Caricati {len(values)} valori univoci di resistenze dalla BOM.")
+            if hasattr(app, 'update_bom_status'):
+                app.update_bom_status()
+
 
 def format_value(value, unit='Ω'):
     """Formatta il valore con il prefisso appropriato (da Giga a Micro)"""
@@ -83,38 +160,46 @@ def create_menu(app):
     file_menu.add_command(label='❌ Esci', command=app.root.quit)
     menubar.add_cascade(label='File', menu=file_menu)
 
+    # BOM
+    bom_menu = tk.Menu(menubar, tearoff=0)
+    bom_menu.add_command(label='Importa BOM Excel...', command=lambda: import_bom(app))
+    bom_menu.add_checkbutton(label='Attiva Modalita BOM', variable=app.use_bom)
+    bom_menu.add_separator()
+    bom_menu.add_command(label='Rimuovi BOM', command=app.clear_bom)
+    menubar.add_cascade(label='BOM', menu=bom_menu)
+
     # Calcolatori Base
     base_menu = tk.Menu(menubar, tearoff=0)
-    base_menu.add_command(label='🎨 Codice Colori Resistori', command=lambda: app.show_tool("color"))
-    base_menu.add_command(label='🔢 Decodifica Codici SMD', command=lambda: app.show_tool("smd"))
+    base_menu.add_command(label='Codice Colori Resistori', command=lambda: app.show_tool("color"))
+    base_menu.add_command(label='Decodifica Codici SMD', command=lambda: app.show_tool("smd"))
     menubar.add_cascade(label='Base', menu=base_menu)
 
     # Analisi Circuitale
     analysis_menu = tk.Menu(menubar, tearoff=0)
-    analysis_menu.add_command(label='⚡ Serie e Parallelo', command=lambda: app.show_tool("series_parallel"))
-    analysis_menu.add_command(label='📊 Analisi Monte Carlo', command=lambda: app.show_tool("monte_carlo"))
-    analysis_menu.add_command(label='🌡️ Potenza e Derating', command=lambda: app.show_tool("power"))
+    analysis_menu.add_command(label='Serie e Parallelo', command=lambda: app.show_tool("series_parallel"))
+    analysis_menu.add_command(label='Analisi Monte Carlo', command=lambda: app.show_tool("monte_carlo"))
+    analysis_menu.add_command(label='Potenza e Derating', command=lambda: app.show_tool("power"))
     menubar.add_cascade(label='Analisi', menu=analysis_menu)
 
     # Progettazione
     design_menu = tk.Menu(menubar, tearoff=0)
-    design_menu.add_command(label='📐 Partitore di Tensione', command=lambda: app.show_tool("divider"))
-    design_menu.add_command(label='🔌 Regolatori (LM317...)', command=lambda: app.show_tool("regulator"))
-    design_menu.add_command(label='〰️ Filtri RC Passivi', command=lambda: app.show_tool("filter"))
-    design_menu.add_command(label='💡 Resistore per LED', command=lambda: app.show_tool("led"))
+    design_menu.add_command(label='Partitore di Tensione', command=lambda: app.show_tool("divider"))
+    design_menu.add_command(label='Regolatori (LM317...)', command=lambda: app.show_tool("regulator"))
+    design_menu.add_command(label='Filtri RC Passivi', command=lambda: app.show_tool("filter"))
+    design_menu.add_command(label='Resistore per LED', command=lambda: app.show_tool("led"))
     menubar.add_cascade(label='Progettazione', menu=design_menu)
 
     # Utility
     util_menu = tk.Menu(menubar, tearoff=0)
-    util_menu.add_command(label='📏 Tabella Cavi AWG', command=lambda: app.show_tool("awg"))
-    util_menu.add_command(label='🌊 Ripartitore Corrente', command=lambda: app.show_tool("curr_div"))
-    util_menu.add_command(label='📚 Glossario Tecnico', command=lambda: app.show_tool("glossary"))
+    util_menu.add_command(label='Tabella Cavi AWG', command=lambda: app.show_tool("awg"))
+    util_menu.add_command(label='Ripartitore Corrente', command=lambda: app.show_tool("curr_div"))
+    util_menu.add_command(label='Glossario Tecnico', command=lambda: app.show_tool("glossary"))
     menubar.add_cascade(label='Utility', menu=util_menu)
 
     # Aiuto
     help_menu = tk.Menu(menubar, tearoff=0)
-    help_menu.add_command(label='❓ Guida Apprendimento', command=show_quick_help)
-    help_menu.add_command(label='ℹ️ Informazioni', command=show_about)
+    help_menu.add_command(label='Guida Apprendimento', command=show_quick_help)
+    help_menu.add_command(label='Informazioni', command=show_about)
     menubar.add_cascade(label='Aiuto', menu=help_menu)
 
     app.root.config(menu=menubar)
