@@ -4,7 +4,8 @@ import numpy as np
 from resistor_lib import (
     e_series, get_color_from_digit, get_multiplier_color,
     eia96_value_codes, eia96_multiplier_codes,
-    derating_start_temp_c, derating_percent_per_c
+    derating_start_temp_c, derating_percent_per_c,
+    regulator_specs, awg_table, glossary_data
 )
 from utils import format_value
 
@@ -158,10 +159,20 @@ def find_best_color_match(target_value, e_series_data):
                 error = abs((actual_value - target_value) / target_value) * 100
                 if error < best_error:
                     best_error = error
+                    # Assicuriamoci che base_value sia formattato per estrarre le cifre correttamente
+                    # Per valori come 1.0, 2.2 ecc. vogliamo le prime due cifre significative
+                    base_str = f"{base_value:g}".replace(".", "")
+                    if len(base_str) == 1:
+                        digit1 = int(base_str[0])
+                        digit2 = 0
+                    else:
+                        digit1 = int(base_str[0])
+                        digit2 = int(base_str[1])
+
                     best_match = {
                         "series_name": series_name,
-                        "band1": get_color_from_digit(int(str(base_value)[0])),
-                        "band2": get_color_from_digit(int(str(base_value)[1])) if len(str(base_value)) > 1 else "nero",
+                        "band1": get_color_from_digit(digit1),
+                        "band2": get_color_from_digit(digit2),
                         "multiplier": get_multiplier_color(decade),
                         "tolerance": "oro",
                         "tolerance_value": 5,
@@ -420,3 +431,102 @@ def design_rc_filter_logic(f_c_target, r_series_values, c_series_values):
 
     result += "\nSpiegazione: Per ogni resistore della serie E, è stato trovato il condensatore (anch'esso da una serie E) che minimizza l'errore sulla frequenza di taglio."
     return result, None
+
+def calculate_regulator_logic(vin, vout_target, regulator_name, e_series_values):
+    """
+    Calcola le coppie R1/R2 per un regolatore lineare (es. LM317).
+    """
+    if regulator_name not in regulator_specs:
+        return None, "Regolatore non supportato."
+    
+    spec = regulator_specs[regulator_name]
+    vref = spec['vref']
+    iadj = spec['iadj_ua'] / 1e6
+    r1_val = spec['r1_recommended']
+
+    if abs(vout_target) < abs(vref):
+        return None, f"La tensione target ({vout_target}V) deve essere maggiore della Vref ({vref}V)."
+
+    best_pairs = []
+    
+    # Testiamo diversi valori di R1 intorno a quello consigliato
+    for r1 in [r1_val, 120, 240, 330, 470]:
+        # Formule basate su segno di Vref (regolatori positivi o negativi)
+        # Vout = Vref * (1 + R2/R1) + Iadj * R2
+        # Resolvendo per R2: R2 = (Vout - Vref) / (Vref/R1 + Iadj)
+        try:
+            target_r2 = (abs(vout_target) - abs(vref)) / (abs(vref)/r1 + iadj)
+            if target_r2 < 0: continue
+            
+            best_r2_match = find_best_commercial_value(target_r2, e_series_values)
+            r2_commercial = best_r2_match['value']
+            
+            vout_actual = vref * (1 + r2_commercial/r1) + (iadj * r2_commercial if vref > 0 else -iadj * r2_commercial)
+            error = abs((vout_actual - vout_target) / vout_target) * 100
+            
+            best_pairs.append({
+                'r1': r1,
+                'r2': r2_commercial,
+                'vout': vout_actual,
+                'error': error
+            })
+        except ZeroDivisionError:
+            continue
+
+    best_pairs.sort(key=lambda x: x['error'])
+    
+    result = f"--- Progettazione Regolatore {regulator_name} ---\n\n"
+    result += f"Obiettivo: Vout = {vout_target}V (Vref = {vref}V)\n\n"
+    result += "{:<10} {:<10} {:<15} {:<10}\n".format("R1", "R2", "Vout Reale", "Errore")
+    result += "-"*50 + "\n"
+    for p in best_pairs[:5]:
+        result += "{:<10} {:<10} {:<15.3f} {:<10.2f}%\n".format(
+            format_value(p['r1']), format_value(p['r2']), p['vout'], p['error']
+        )
+    
+    return result, None
+
+def calculate_current_divider_logic(i_total, resistances):
+    """
+    Calcola la corrente in ogni ramo di un ripartitore di corrente.
+    """
+    if not resistances:
+        return None, "Inserisci almeno una resistenza."
+    
+    try:
+        g_total = sum(1/r for r in resistances)
+        v_equiv = i_total / g_total
+        
+        result = "--- Analisi Ripartitore di Corrente ---\n\n"
+        result += f"Corrente Totale: {i_total} A\n\n"
+        result += "{:<10} {:<15} {:<15}\n".format("Ramo", "Resistenza", "Corrente")
+        result += "-"*40 + "\n"
+        
+        for i, r in enumerate(resistances):
+            i_branch = v_equiv / r
+            result += "R{:<9} {:<15} {:<15.4f} A\n".format(i+1, format_value(r), i_branch)
+            
+        return result, None
+    except ZeroDivisionError:
+        return None, "La resistenza non può essere zero."
+
+def convert_awg_logic(awg_val):
+    if awg_val in awg_table:
+        data = awg_table[awg_val]
+        result = f"--- Dati Cavo AWG {awg_val} ---\n\n"
+        result += f"- Diametro: {data['diameter_mm']} mm\n"
+        result += f"- Sezione: {data['area_mm2']} mm²\n"
+        result += f"- Resistenza: {data['res_ohm_km']} Ω/km\n"
+        result += f"- Corrente Max (indicativa): {data['max_amp']} A\n"
+        return result, None
+    else:
+        return None, "Valore AWG non in tabella (supportati 10-30)."
+
+def search_glossary_logic(query):
+    query = query.lower()
+    results = []
+    for term, definition in glossary_data.items():
+        if query in term.lower() or query in definition.lower():
+            results.append(f"**{term}**: {definition}")
+    if not results: return "Nessun risultato trovato nel glossario."
+    return "\n\n".join(results)

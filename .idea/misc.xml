@@ -3,5 +3,5 @@
   <component name="Black">
     <option name="sdkName" value="Python 3.13 (Resistor-Tool)" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.13 (Resistor-Tool)" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.13" project-jdk-type="Python SDK" />
 </project>

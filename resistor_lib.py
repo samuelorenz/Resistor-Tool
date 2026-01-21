@@ -24,11 +24,22 @@ e_series = {
 }
 
 # Package e potenze (valori tipici, consultare datasheet per derating)
-package_power = {
-    "0201": 0.05, "0402": 0.0625, "0603": 0.1, "0805": 0.125,
-    "1206": 0.25, "1210": 0.33, "1812": 0.5, "2010": 0.75, "2512": 1.0,
-    "AXIAL": 0.25, "RADIAL": 0.25
+# Aggiunta resistenza termica indicativa (Rthja in °C/W) per analisi avanzata
+package_data = {
+    "0201": {"power": 0.05, "rthja": 1000}, 
+    "0402": {"power": 0.0625, "rthja": 800}, 
+    "0603": {"power": 0.1, "rthja": 600}, 
+    "0805": {"power": 0.125, "rthja": 400},
+    "1206": {"power": 0.25, "rthja": 300}, 
+    "1210": {"power": 0.33, "rthja": 250}, 
+    "1812": {"power": 0.5, "rthja": 200}, 
+    "2010": {"power": 0.75, "rthja": 150}, 
+    "2512": {"power": 1.0, "rthja": 100},
+    "AXIAL-0.25": {"power": 0.25, "rthja": 150}, 
+    "AXIAL-0.5": {"power": 0.5, "rthja": 100}
 }
+# Mantengo package_power per compatibilità retroattiva
+package_power = {k: v["power"] for k, v in package_data.items()}
 
 # Parametri per il derating termico (valori tipici, da datasheet)
 derating_start_temp_c = 70  # Temperatura (in °C) a cui inizia il derating
@@ -84,52 +95,40 @@ def get_multiplier_color(exponent):
     else:
         return "nero"
 
-def format_value(value):
-    if value >= 1e9:
-        return f"{value / 1e9:.3f} GΩ"
-    if value >= 1e6:
-        return f"{value / 1e6:.3f} MΩ"
-    elif value >= 1e3:
-        return f"{value / 1e3:.3f} kΩ"
-    elif value >= 1:
-        return f"{value:.3f} Ω"
-    elif value >= 1e-3:
-        return f"{value * 1e3:.3f} mΩ"
-    else:
-        return f"{value * 1e6:.3f} µΩ"
+# Specifiche Regolatori Lineari
+regulator_specs = {
+    "LM317": {"vref": 1.25, "iadj_ua": 50, "r1_recommended": 240},
+    "LM337": {"vref": -1.25, "iadj_ua": 50, "r1_recommended": 240},
+    "LM350": {"vref": 1.25, "iadj_ua": 50, "r1_recommended": 120},
+    "AMS1117-ADJ": {"vref": 1.25, "iadj_ua": 60, "r1_recommended": 120}
+}
 
-def find_best_commercial_value(target_value, series):
-    best_error = float('inf')
-    best_value = target_value
+# Tabella AWG (American Wire Gauge)
+awg_table = {
+    10: {"diameter_mm": 2.588, "area_mm2": 5.26, "res_ohm_km": 3.27, "max_amp": 30},
+    12: {"diameter_mm": 2.053, "area_mm2": 3.31, "res_ohm_km": 5.21, "max_amp": 20},
+    14: {"diameter_mm": 1.628, "area_mm2": 2.08, "res_ohm_km": 8.28, "max_amp": 15},
+    16: {"diameter_mm": 1.291, "area_mm2": 1.31, "res_ohm_km": 13.17, "max_amp": 10},
+    18: {"diameter_mm": 1.024, "area_mm2": 0.823, "res_ohm_km": 20.95, "max_amp": 7},
+    20: {"diameter_mm": 0.812, "area_mm2": 0.518, "res_ohm_km": 33.31, "max_amp": 5},
+    22: {"diameter_mm": 0.644, "area_mm2": 0.326, "res_ohm_km": 52.96, "max_amp": 3},
+    24: {"diameter_mm": 0.511, "area_mm2": 0.205, "res_ohm_km": 84.22, "max_amp": 2},
+    26: {"diameter_mm": 0.405, "area_mm2": 0.129, "res_ohm_km": 133.9, "max_amp": 1},
+    28: {"diameter_mm": 0.321, "area_mm2": 0.081, "res_ohm_km": 212.9, "max_amp": 0.5},
+    30: {"diameter_mm": 0.255, "area_mm2": 0.050, "res_ohm_km": 338.6, "max_amp": 0.3}
+}
 
-    for decade in range(-2, 8):
-        for base_value in series:
-            actual_value = base_value * (10 ** decade)
-            error = abs((actual_value - target_value) / target_value) * 100
+# Glossario Tecnico
+glossary_data = {
+    "AEC-Q200": "Standard di qualificazione per componenti passivi in ambito automotive.",
+    "Derating": "Riduzione della potenza operativa di un componente per aumentarne l'affidabilità in condizioni di stress.",
+    "E-Series": "Serie di valori preferiti per componenti elettronici definita dallo standard IEC 60063.",
+    "IEC 60062": "Standard internazionale per i codici di marcatura di resistori e condensatori.",
+    "PPM/°C": "Parti per milione per grado Celsius. Indica il coefficiente di temperatura.",
+    "Tolleranza": "Variazione massima consentita del valore reale rispetto al nominale.",
+    "Vref": "Tensione di riferimento interna di un regolatore.",
+    "Rthja": "Resistenza termica tra giunzione e ambiente.",
+    "SMD": "Surface Mount Device. Componenti a montaggio superficiale.",
+    "Through-hole": "Componenti con reofori passanti."
+}
 
-            if error < best_error:
-                best_error = error
-                best_value = actual_value
-
-    return {'value': best_value, 'error': best_error}
-
-def calculate_series_total(resistances, conn_type='serie'):
-    if not resistances:
-        return 0.0, ''
-
-    if conn_type == 'serie':
-        total = sum(resistances)
-        calc_str = ' + '.join(str(r) for r in resistances)
-    else:
-        total = 1 / sum(1 / r for r in resistances)
-        calc_str = '1 / (' + ' + '.join(f'1/{r}' for r in resistances) + ')'
-
-    return total, calc_str
-
-def calc_tolerance_range(total_resistance, tolerances):
-    if not tolerances:
-        return total_resistance, total_resistance, 0.0
-    tol_mean = sum(tolerances) / len(tolerances)
-    min_total = total_resistance * (1 - tol_mean / 100)
-    max_total = total_resistance * (1 + tol_mean / 100)
-    return min_total, max_total, tol_mean
